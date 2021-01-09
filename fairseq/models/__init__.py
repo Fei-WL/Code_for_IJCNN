@@ -22,6 +22,7 @@ from .fairseq_incremental_decoder import FairseqIncrementalDecoder
 from .fairseq_model import (
     BaseFairseqModel,
     FairseqEncoderDecoderModel,
+    FairseqAEEncoderDecoderModel,
     FairseqEncoderModel,
     FairseqLanguageModel,
     FairseqModel,
