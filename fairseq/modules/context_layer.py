@@ -40,10 +40,10 @@ class ContextEncoderLayer(nn.Module):
         self.context_attn = self.build_context_attention(self.embed_dim, args)
         self.context_attn_layer_norm = LayerNorm(self.embed_dim)
 
-        # for param in self.context_attn.parameters():
-        #     param.requires_grad = False
-        # for param in self.context_attn_layer_norm.parameters():
-        #     param.requires_grad = False
+        for param in self.context_attn.parameters():
+            param.requires_grad = False
+        for param in self.context_attn_layer_norm.parameters():
+            param.requires_grad = False
 
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
@@ -255,10 +255,10 @@ class ContextDecoderLayer(nn.Module):
         self.context_attn = self.build_context_attention(self.embed_dim, args)
         self.context_attn_layer_norm = LayerNorm(self.embed_dim)
 
-        # for param in self.context_attn.parameters():
-        #     param.requires_grad = False
-        # for param in self.context_attn_layer_norm.parameters():
-        #     param.requires_grad = False
+        for param in self.context_attn.parameters():
+            param.requires_grad = False
+        for param in self.context_attn_layer_norm.parameters():
+            param.requires_grad = False
 
         if no_encoder_attn:
             self.encoder_attn = None
