@@ -434,6 +434,10 @@ class AutoformerEncoder(FairseqEncoder):
         # B x T x C
         curr_src = curr
 
+        print("curr:{}, curr.shape:{}".format(curr, curr.shape))
+        print("prev:{}, prev.shape:{}".format(prev, prev.shape))
+        print("post:{}, post.shape:{}".format(post, post.shape))
+
         curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
         prev, prev_encoder_embedding = self.forward_embedding(prev, 0)
         post, post_encoder_embedding = self.forward_embedding(post, 2)
