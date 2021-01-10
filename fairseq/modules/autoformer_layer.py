@@ -147,9 +147,6 @@ class AutoformerEncoderLayer(nn.Module):
         G = self.G_fc2(G_fc1)                               # output shape:[batch, sent_len, 1]
         G = self.G_dropout_module(G)
 
-        print("prev.shape:{}, post.shape:{}".format(prev.shape, post.shape))
-        print("G.shape:{}".format(G.shape))
-
         if self.training:
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
