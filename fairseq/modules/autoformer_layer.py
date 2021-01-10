@@ -24,7 +24,7 @@ class AutoformerEncoderLayer(nn.Module):
         self.self_attn = self.build_self_attention(self.embed_dim, args)
         self.self_attn_layer_norm = LayerNorm(self.embed_dim)
 
-        self.context_encoder_layer = TransformerEncoderLayer(self.embed_dim, args)
+        self.context_encoder_layer = TransformerEncoderLayer(args)
         self.build_clsr_layer()
 
         self.cross_attn = self.build_cross_attention(self.embed_dim, args)
