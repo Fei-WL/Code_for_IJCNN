@@ -576,6 +576,7 @@ class AutoEncoderDecoder(FairseqEncoder):
         embed_dim = embed_tokens.embedding_dim
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
+        self.share_input_output_embed = args.share_decoder_input_output_embed
 
         self.embed_tokens = embed_tokens
 
