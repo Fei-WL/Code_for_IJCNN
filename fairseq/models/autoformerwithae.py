@@ -271,8 +271,6 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
         )
         aedecoder_out = self.aedecoder(encoder_out)
 
-        print("encoder_out:{}\n decoder_out:{}\n aedecoder_out:{}".format(encoder_out, decoder_out, aedecoder_out))
-
         return aedecoder_out, decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
