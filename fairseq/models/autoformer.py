@@ -397,14 +397,15 @@ class AutoformerEncoder(FairseqEncoder):
                 curr.append(temp[res[0] + 1:res[-1]])
                 post.append(temp[res[-1] + 1:])
 
+        curr_length = len(max(curr, key=len))
         prev_length = len(max(prev, key=len))
         post_length = len(max(post, key=len))
-        max_length = [prev_length, post_length]
+        max_length = [curr_length, prev_length, post_length]
         pad_length = max(max_length)
 
         prev = self.pad(prev, pad_length)
         post = self.pad(post, pad_length)
-        curr = pad_sequence(curr, batch_first=True, padding_value=self.padding_idx)
+        curr = self.pad(curr, pad_length)
 
         curr_encoder_padding_mask = curr.eq(self.padding_idx)
         prev_encoder_padding_mask = prev.eq(self.padding_idx)
