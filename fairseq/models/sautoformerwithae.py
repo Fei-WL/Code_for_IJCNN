@@ -35,7 +35,7 @@ DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
-@register_model("autoformerwithae")
+@register_model("sautoformerwithae")
 class AutoformerModel(FairseqAEEncoderDecoderModel):
     @classmethod
     def hub_models(cls):
@@ -659,7 +659,7 @@ class AutoEncoderDecoder(FairseqEncoder):
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
 
-@register_model_architecture("autoformerwithae", "autoformerwithae")
+@register_model_architecture("sautoformerwithae", "sautoformerwithae")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
