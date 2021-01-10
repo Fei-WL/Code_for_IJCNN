@@ -80,9 +80,15 @@ class AutoformerEncoderLayer(nn.Module):
         )
 
     def build_clsr_layer(self):
-        self.G_fc1 = self.build_fc1(self.embed_dim, 128, bias=True)
+        self.G_fc1 = self.build_fc1(self.embed_dim, 128,
+                                    self.quant_noise,
+                                    self.quant_noise_block_size,
+                                    bias=True)
         self.G_fc1_activation_fn = utils.get_activation_fn("relu")
-        self.G_fc2 = self.build_fc2(128, 1, bias=False)
+        self.G_fc2 = self.build_fc2(128, 1,
+                                    self.quant_noise,
+                                    self.quant_noise_block_size,
+                                    bias=False)
         self.G_activation_dropout_module = FairseqDropout(
             float(0), module_name=self.__class__.__name__
         )
@@ -94,8 +100,14 @@ class AutoformerEncoderLayer(nn.Module):
         )
         self.g_activation_fn = utils.get_activation_fn("sigmoid")
 
-        self.prev_W = self.build_fc1(self.embed_dim, self.embed_dim, bias=False)
-        self.post_W = self.build_fc2(self.embed_dim, self.embed_dim, bias=False)
+        self.prev_W = self.build_fc1(self.embed_dim, self.embed_dim,
+                                     self.quant_noise,
+                                     self.quant_noise_block_size,
+                                     bias=False)
+        self.post_W = self.build_fc2(self.embed_dim, self.embed_dim,
+                                     self.quant_noise,
+                                     self.quant_noise_block_size,
+                                     bias=False)
 
     def build_cross_attention(self, embed_dim, args):
         return MultiheadAttention(

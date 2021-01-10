@@ -397,14 +397,9 @@ class AutoformerEncoder(FairseqEncoder):
             temp = utils.strip_pad(_tokens[idx], self.padding_idx)
             res = find_index(temp, self.sep_idx)
 
-            if res is None:
-                prev.append(temp)
-                curr.append(temp)
-                post.append(temp)
-            else:
-                prev.append(temp[:res[0]])
-                curr.append(temp[res[0] + 1:res[-1]])
-                post.append(temp[res[-1] + 1:])
+            prev.append(temp[:res[0]])
+            curr.append(temp[res[0] + 1:res[-1]])
+            post.append(temp[res[-1] + 1:])
 
         prev_length = len(max(prev, key=len))
         post_length = len(max(post, key=len))
@@ -436,6 +431,7 @@ class AutoformerEncoder(FairseqEncoder):
         prev_encoder_padding_mask, \
         post_encoder_padding_mask = self.split(src_tokens)
 
+        # B x T x C
         curr_src = curr
 
         curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
@@ -469,7 +465,7 @@ class AutoformerEncoder(FairseqEncoder):
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
-            current_src=curr_src,
+            current_src=curr_src, # B x T x C
             autodecoder_out=None,
         )
 
@@ -508,6 +504,12 @@ class AutoformerEncoder(FairseqEncoder):
             if encoder_embedding is None
             else encoder_embedding.index_select(0, new_order)
         )
+
+        encoder_states = encoder_out.encoder_states
+        if encoder_states is not None:
+            for idx, state in enumerate(encoder_states):
+                encoder_states[idx] = state.index_select(1, new_order)
+
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
             src_tokens = src_tokens.index_select(0, new_order)
@@ -515,11 +517,6 @@ class AutoformerEncoder(FairseqEncoder):
         src_lengths = encoder_out.src_lengths
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
-
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
 
         current_src = encoder_out.current_src
         if current_src is not None:
