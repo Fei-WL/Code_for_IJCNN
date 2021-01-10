@@ -507,6 +507,8 @@ def get_activation_fn(activation: str) -> Callable:
         return torch.tanh
     elif activation == "linear":
         return lambda x: x
+    elif activation == "sigmoid":
+        return torch.sigmoid
     else:
         raise RuntimeError("--activation-fn {} not supported".format(activation))
 
