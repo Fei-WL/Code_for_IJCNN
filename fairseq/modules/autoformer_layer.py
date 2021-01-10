@@ -207,8 +207,8 @@ class AutoformerEncoderLayer(nn.Module):
         """
         Use clsr to make context & Do cross-attention
         """
-        prev_x = self.ctx_encoder_layer(prev_x, prev_encoder_padding_mask, prev_attn_mask)
-        post_x = self.ctx_encoder_layer(post_x, post_encoder_padding_mask, post_attn_mask)
+        prev_x = self.context_encoder_layer(prev_x, prev_encoder_padding_mask, prev_attn_mask)
+        post_x = self.context_encoder_layer(post_x, post_encoder_padding_mask, post_attn_mask)
         clsr_ctx, clsr_ctx_padding_mask = self.do_clsr_gate(curr_x, prev_x, post_x,
                                                             prev_encoder_padding_mask,
                                                             post_encoder_padding_mask)

@@ -270,6 +270,9 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
             return_all_hiddens=return_all_hiddens,
         )
         aedecoder_out = self.aedecoder(encoder_out)
+
+        print("encoder_out:{}\n decoder_out:{}\n aedecoder_out:{}".format(encoder_out, decoder_out, aedecoder_out))
+
         return aedecoder_out, decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
@@ -433,10 +436,6 @@ class AutoformerEncoder(FairseqEncoder):
 
         # B x T x C
         curr_src = curr
-
-        print("curr:{}, curr.shape:{}".format(curr, curr.shape))
-        print("prev:{}, prev.shape:{}".format(prev, prev.shape))
-        print("post:{}, post.shape:{}".format(post, post.shape))
 
         curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
         prev, prev_encoder_embedding = self.forward_embedding(prev, 0)
