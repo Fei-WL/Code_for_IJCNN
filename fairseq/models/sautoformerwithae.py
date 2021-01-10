@@ -25,7 +25,7 @@ from fairseq.modules import (
     LayerNorm,
     PositionalEmbedding,
     SinusoidalPositionalEmbedding,
-    AutoformerEncoderLayer,
+    SAutoformerEncoderLayer,
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
@@ -355,7 +355,7 @@ class AutoformerEncoder(FairseqEncoder):
             self.layer_norm = None
 
     def build_encoder_layer(self, args):
-        return AutoformerEncoderLayer(args)
+        return SAutoformerEncoderLayer(args)
 
     def seg_position(self, shape, position, device):
         seg_pos = torch.tensor((), dtype=torch.int32)
