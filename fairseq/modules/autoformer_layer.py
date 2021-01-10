@@ -59,14 +59,14 @@ class AutoformerEncoderLayer(nn.Module):
 
         self.final_layer_norm = LayerNorm(self.embed_dim)
 
-    def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
+    def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size, bias=True):
         return quant_noise(
-            nn.Linear(input_dim, output_dim), p=q_noise, block_size=qn_block_size
+            nn.Linear(input_dim, output_dim, bias), p=q_noise, block_size=qn_block_size
         )
 
-    def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size):
+    def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size, bias=True):
         return quant_noise(
-            nn.Linear(input_dim, output_dim), p=q_noise, block_size=qn_block_size
+            nn.Linear(input_dim, output_dim, bias), p=q_noise, block_size=qn_block_size
         )
 
     def build_self_attention(self, embed_dim, args):
@@ -116,7 +116,9 @@ class AutoformerEncoderLayer(nn.Module):
         `...self_attn_layer_norm.weight` and `...layer_norms.1.weight` to
         `...final_layer_norm.weight`
         """
-        layer_norm_map = {"0": "self_attn_layer_norm", "1": "final_layer_norm"}
+        layer_norm_map = {"0": "self_attn_layer_norm",
+                          "1": "cross_attn_layer_norm",
+                          "2": "final_layer_norm"}
         for old, new in layer_norm_map.items():
             for m in ("weight", "bias"):
                 k = "{}.layer_norms.{}.{}".format(name, old, m)
