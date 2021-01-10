@@ -36,7 +36,8 @@ from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .vggblock import VGGBlock
 from .context_layer import ContextDecoderLayer, ContextEncoderLayer
-from.autoformer_layer import AutoformerEncoderLayer
+from .autoformer_layer import AutoformerEncoderLayer
+from .s_autoformer_layer import SAutoformerEncoderLayer
 
 __all__ = [
     "AdaptiveInput",
@@ -78,4 +79,5 @@ __all__ = [
     "ContextDecoderLayer",
     "ContextEncoderLayer",
     "AutoformerEncoderLayer",
+    "SAutoformerEncoderLayer",
 ]

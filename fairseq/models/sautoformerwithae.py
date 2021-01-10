@@ -11,12 +11,13 @@ import torch.nn as nn
 from fairseq import utils
 from fairseq.models import (
     FairseqEncoder,
-    FairseqEncoderDecoderModel,
-    FairseqIncrementalDecoder,
+    FairseqAEEncoderDecoderModel,
     register_model,
     register_model_architecture,
 )
-from fairseq.models.fairseq_encoder import EncoderOut
+from fairseq.models.fairseq_encoder import AutoEncoderOut
+from fairseq.models.autoformer import TransformerDecoder, find_index, Embedding
+from fairseq.models.transformer import TransformerEncoder, TransformerEncoderLayer
 from fairseq.modules import (
     AdaptiveSoftmax,
     FairseqDropout,
@@ -24,8 +25,7 @@ from fairseq.modules import (
     LayerNorm,
     PositionalEmbedding,
     SinusoidalPositionalEmbedding,
-    TransformerDecoderLayer,
-    TransformerEncoderLayer,
+    AutoformerEncoderLayer,
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
@@ -35,24 +35,8 @@ DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
-@register_model("transformer")
-class TransformerModel(FairseqEncoderDecoderModel):
-    """
-    Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
-    <https://arxiv.org/abs/1706.03762>`_.
-
-    Args:
-        encoder (TransformerEncoder): the encoder
-        decoder (TransformerDecoder): the decoder
-
-    The Transformer model provides the following named architectures and
-    command-line arguments:
-
-    .. argparse::
-        :ref: fairseq.models.transformer_parser
-        :prog:
-    """
-
+@register_model("autoformerwithae")
+class AutoformerModel(FairseqAEEncoderDecoderModel):
     @classmethod
     def hub_models(cls):
         # fmt: off
@@ -86,8 +70,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         }
         # fmt: on
 
-    def __init__(self, args, encoder, decoder):
-        super().__init__(encoder, decoder)
+    def __init__(self, args, encoder, decoder, aedecoder):
+        super().__init__(encoder, decoder, aedecoder)
         self.args = args
         self.supports_align_args = True
 
@@ -221,7 +205,9 @@ class TransformerModel(FairseqEncoderDecoderModel):
 
         encoder = cls.build_encoder(args, src_dict, encoder_embed_tokens)
         decoder = cls.build_decoder(args, tgt_dict, decoder_embed_tokens)
-        return cls(args, encoder, decoder)
+        aedecoder = cls.build_aedecoder(args, src_dict, encoder_embed_tokens)
+
+        return cls(args, encoder, decoder, aedecoder)
 
     @classmethod
     def build_embedding(cls, args, dictionary, embed_dim, path=None):
@@ -237,7 +223,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_encoder(cls, args, src_dict, embed_tokens):
-        return TransformerEncoder(args, src_dict, embed_tokens)
+        return AutoformerEncoder(args, src_dict, embed_tokens)
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -247,6 +233,10 @@ class TransformerModel(FairseqEncoderDecoderModel):
             embed_tokens,
             no_encoder_attn=getattr(args, "no_cross_attention", False),
         )
+
+    @classmethod
+    def build_aedecoder(cls, args, src_dict, embed_tokens):
+        return AutoEncoderDecoder(args, src_dict, embed_tokens)
 
     # TorchScript doesn't support optional arguments with variable length (**kwargs).
     # Current workaround is to add union of all arguments in child classes.
@@ -278,7 +268,9 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_lengths=src_lengths,
             return_all_hiddens=return_all_hiddens,
         )
-        return decoder_out
+        aedecoder_out = self.aedecoder(encoder_out)
+
+        return aedecoder_out, decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
@@ -293,8 +285,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
 
-
-class TransformerEncoder(FairseqEncoder):
+class AutoformerEncoder(FairseqEncoder):
     """
     Transformer encoder consisting of *args.encoder_layers* layers. Each layer
     is a :class:`TransformerEncoderLayer`.
@@ -316,6 +307,7 @@ class TransformerEncoder(FairseqEncoder):
 
         embed_dim = embed_tokens.embedding_dim
         self.padding_idx = embed_tokens.padding_idx
+        self.sep_idx = dictionary.sep()
         self.max_source_positions = args.max_source_positions
 
         self.embed_tokens = embed_tokens
@@ -354,6 +346,7 @@ class TransformerEncoder(FairseqEncoder):
         self.layers.extend(
             [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
         )
+        self.context_encoder = TransformerEncoder(args, dictionary, embed_tokens)
         self.num_layers = len(self.layers)
 
         if args.encoder_normalize_before:
@@ -362,7 +355,7 @@ class TransformerEncoder(FairseqEncoder):
             self.layer_norm = None
 
     def build_encoder_layer(self, args):
-        return TransformerEncoderLayer(args)
+        return AutoformerEncoderLayer(args)
 
     def seg_position(self, shape, position, device):
         seg_pos = torch.tensor((), dtype=torch.int32)
@@ -389,21 +382,44 @@ class TransformerEncoder(FairseqEncoder):
             x = self.quant_noise(x)
         return x, embed
 
-    # def forward_embedding(
-    #     self, src_tokens, token_embedding: Optional[torch.Tensor] = None
-    # ):
-    #     # embed tokens and positions
-    #     if token_embedding is None:
-    #         token_embedding = self.embed_tokens(src_tokens)
-    #     x = embed = self.embed_scale * token_embedding
-    #     if self.embed_positions is not None:
-    #         x = embed + self.embed_positions(src_tokens)
-    #     if self.layernorm_embedding is not None:
-    #         x = self.layernorm_embedding(x)
-    #     x = self.dropout_module(x)
-    #     if self.quant_noise is not None:
-    #         x = self.quant_noise(x)
-    #     return x, embed
+    def pad(self, tokens, max_length):
+        bsz = len(tokens)
+        padded = tokens[0].new(bsz, max_length).fill_(self.padding_idx)
+        for idx in range(bsz):
+            padded[idx][:len(tokens[idx])].copy_(tokens[idx])
+
+        return padded.contiguous()
+
+    def split(self, _tokens):
+        curr = []
+        prev = []
+        post = []
+        for idx in range(len(_tokens)):
+            temp = utils.strip_pad(_tokens[idx], self.padding_idx)
+            res = find_index(temp, self.sep_idx)
+
+            prev.append(temp[:res[0]])
+            curr.append(temp[res[0] + 1:res[-1]])
+            post.append(temp[res[-1] + 1:])
+
+        curr_length = len(max(curr, key=len))
+        prev_length = len(max(prev, key=len))
+        post_length = len(max(post, key=len))
+        max_length = [curr_length, prev_length, post_length]
+        pad_length = max(max_length)
+
+        prev = self.pad(prev, pad_length)
+        post = self.pad(post, pad_length)
+        curr = self.pad(curr, pad_length)
+
+        curr_encoder_padding_mask = curr.eq(self.padding_idx)
+        prev_encoder_padding_mask = prev.eq(self.padding_idx)
+        post_encoder_padding_mask = post.eq(self.padding_idx)
+
+        return curr.contiguous(), prev.contiguous(), post.contiguous(), \
+               curr_encoder_padding_mask.contiguous(), \
+               prev_encoder_padding_mask.contiguous(), \
+               post_encoder_padding_mask.contiguous()
 
     def forward(
         self,
@@ -411,62 +427,54 @@ class TransformerEncoder(FairseqEncoder):
         src_lengths,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
-        position: int = 0,
     ):
-        """
-        Args:
-            src_tokens (LongTensor): tokens in the source language of shape
-                `(batch, src_len)`
-            src_lengths (torch.LongTensor): lengths of each source sentence of
-                shape `(batch)`
-            return_all_hiddens (bool, optional): also return all of the
-                intermediate hidden states (default: False).
-            token_embeddings (torch.Tensor, optional): precomputed embeddings
-                default `None` will recompute embeddings
+        curr, prev, post,\
+        curr_encoder_padding_mask, \
+        prev_encoder_padding_mask, \
+        post_encoder_padding_mask = self.split(src_tokens)
 
-        Returns:
-            namedtuple:
-                - **encoder_out** (Tensor): the last encoder layer's output of
-                  shape `(src_len, batch, embed_dim)`
-                - **encoder_padding_mask** (ByteTensor): the positions of
-                  padding elements of shape `(batch, src_len)`
-                - **encoder_embedding** (Tensor): the (scaled) embedding lookup
-                  of shape `(batch, src_len, embed_dim)`
-                - **encoder_states** (List[Tensor]): all intermediate
-                  hidden states of shape `(src_len, batch, embed_dim)`.
-                  Only populated if *return_all_hiddens* is True.
-        """
-        x, encoder_embedding = self.forward_embedding(src_tokens, position, token_embeddings)
+        prev_out = self.context_encoder(prev, src_lengths, return_all_hiddens, token_embeddings, 0)
+        post_out = self.context_encoder(post, src_lengths, return_all_hiddens, token_embeddings, 2)
+        prev, prev_encoder_padding_mask = prev_out.encoder_out, prev_out.encoder_padding_mask
+        post, post_encoder_padding_mask = post_out.encoder_out, post_out.encoder_padding_mask
+
+        # B x T x C
+        curr_src = curr
+
+        curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
 
         # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        # compute padding mask
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        curr = curr.transpose(0, 1)
 
         encoder_states = [] if return_all_hiddens else None
 
         # encoder layers
         for layer in self.layers:
-            x = layer(x, encoder_padding_mask)
+            curr = layer(curr_x=curr, prev_x=prev, post_x=post,
+                         curr_encoder_padding_mask=curr_encoder_padding_mask,
+                         prev_encoder_padding_mask=prev_encoder_padding_mask,
+                         post_encoder_padding_mask=post_encoder_padding_mask)
+
             if return_all_hiddens:
                 assert encoder_states is not None
-                encoder_states.append(x)
+                encoder_states.append(curr)
 
         if self.layer_norm is not None:
-            x = self.layer_norm(x)
+            curr = self.layer_norm(curr)
 
-        return EncoderOut(
-            encoder_out=x,  # T x B x C
-            encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=encoder_embedding,  # B x T x C
+        return AutoEncoderOut(
+            encoder_out=curr,  # T x B x C
+            encoder_padding_mask=curr_encoder_padding_mask,  # B x T
+            encoder_embedding=curr_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
+            current_src=curr_src, # B x T x C
+            autodecoder_out=None,
         )
 
     @torch.jit.export
-    def reorder_encoder_out(self, encoder_out: EncoderOut, new_order):
+    def reorder_encoder_out(self, encoder_out: AutoEncoderOut, new_order):
         """
         Reorder encoder output according to *new_order*.
 
@@ -500,6 +508,12 @@ class TransformerEncoder(FairseqEncoder):
             if encoder_embedding is None
             else encoder_embedding.index_select(0, new_order)
         )
+
+        encoder_states = encoder_out.encoder_states
+        if encoder_states is not None:
+            for idx, state in enumerate(encoder_states):
+                encoder_states[idx] = state.index_select(1, new_order)
+
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
             src_tokens = src_tokens.index_select(0, new_order)
@@ -508,18 +522,23 @@ class TransformerEncoder(FairseqEncoder):
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
 
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
+        current_src = encoder_out.current_src
+        if current_src is not None:
+            current_src = current_src.index_select(0, new_order)
 
-        return EncoderOut(
+        autodecoder_out = encoder_out.autodecoder_out
+        if autodecoder_out is not None:
+            autodecoder_out = autodecoder_out.index_select(0, new_order)
+
+        return AutoEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
             encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
+            current_src=current_src, # B x T x C
+            autodecoder_out=autodecoder_out,
         )
 
     def max_positions(self):
@@ -552,115 +571,36 @@ class TransformerEncoder(FairseqEncoder):
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
 
-
-class TransformerDecoder(FairseqIncrementalDecoder):
-    """
-    Transformer decoder consisting of *args.decoder_layers* layers. Each layer
-    is a :class:`TransformerDecoderLayer`.
-
-    Args:
-        args (argparse.Namespace): parsed command-line arguments
-        dictionary (~fairseq.data.Dictionary): decoding dictionary
-        embed_tokens (torch.nn.Embedding): output embedding
-        no_encoder_attn (bool, optional): whether to attend to encoder outputs
-            (default: False).
-    """
-
-    def __init__(self, args, dictionary, embed_tokens, no_encoder_attn=False):
-        self.args = args
+class AutoEncoderDecoder(FairseqEncoder):
+    def __init__(self, args, dictionary, embed_tokens):
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
-        self._future_mask = torch.empty(0)
+        self.encoder_layerdrop = args.encoder_layerdrop
 
-        self.dropout_module = FairseqDropout(
-            args.dropout, module_name=self.__class__.__name__
-        )
-        self.decoder_layerdrop = args.decoder_layerdrop
-        self.share_input_output_embed = args.share_decoder_input_output_embed
-
-        input_embed_dim = embed_tokens.embedding_dim
-        embed_dim = args.decoder_embed_dim
-        self.embed_dim = embed_dim
-        self.output_embed_dim = args.decoder_output_dim
-
+        embed_dim = embed_tokens.embedding_dim
         self.padding_idx = embed_tokens.padding_idx
-        self.max_target_positions = args.max_target_positions
+        self.max_source_positions = args.max_source_positions
+        self.share_input_output_embed = args.share_decoder_input_output_embed
+        self.output_embed_dim = args.decoder_output_dim
 
         self.embed_tokens = embed_tokens
 
-        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
-
-        if not args.adaptive_input and args.quant_noise_pq > 0:
-            self.quant_noise = apply_quant_noise_(
-                nn.Linear(embed_dim, embed_dim, bias=False),
-                args.quant_noise_pq,
-                args.quant_noise_pq_block_size,
-            )
-        else:
-            self.quant_noise = None
-
-        self.project_in_dim = (
-            Linear(input_embed_dim, embed_dim, bias=False)
-            if embed_dim != input_embed_dim
-            else None
-        )
-
-        self.embed_positions = (
-            PositionalEmbedding(
-                args.max_target_positions,
-                embed_dim,
-                self.padding_idx,
-                learned=args.decoder_learned_pos,
-            )
-            if not args.no_token_positional_embeddings
-            else None
-        )
-
-        if getattr(args, "layernorm_embedding", False):
-            self.layernorm_embedding = LayerNorm(embed_dim)
-        else:
-            self.layernorm_embedding = None
-
-        self.cross_self_attention = getattr(args, "cross_self_attention", False)
-
-        if self.decoder_layerdrop > 0.0:
-            self.layers = LayerDropModuleList(p=self.decoder_layerdrop)
+        if self.encoder_layerdrop > 0.0:
+            self.layers = LayerDropModuleList(p=self.encoder_layerdrop)
         else:
             self.layers = nn.ModuleList([])
         self.layers.extend(
-            [
-                self.build_decoder_layer(args, no_encoder_attn)
-                for _ in range(args.decoder_layers)
-            ]
+            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
         )
         self.num_layers = len(self.layers)
 
-        if args.decoder_normalize_before and not getattr(
-            args, "no_decoder_final_norm", False
-        ):
+        if args.encoder_normalize_before:
             self.layer_norm = LayerNorm(embed_dim)
         else:
             self.layer_norm = None
 
-        self.project_out_dim = (
-            Linear(embed_dim, self.output_embed_dim, bias=False)
-            if embed_dim != self.output_embed_dim and not args.tie_adaptive_weights
-            else None
-        )
-
-        self.adaptive_softmax = None
         self.output_projection = None
-        if args.adaptive_softmax_cutoff is not None:
-            self.adaptive_softmax = AdaptiveSoftmax(
-                len(dictionary),
-                self.output_embed_dim,
-                utils.eval_str_list(args.adaptive_softmax_cutoff, type=int),
-                dropout=args.adaptive_softmax_dropout,
-                adaptive_inputs=embed_tokens if args.tie_adaptive_weights else None,
-                factor=args.adaptive_softmax_factor,
-                tie_proj=args.tie_adaptive_proj,
-            )
-        elif self.share_input_output_embed:
+        if self.share_input_output_embed:
             self.output_projection = nn.Linear(
                 self.embed_tokens.weight.shape[1],
                 self.embed_tokens.weight.shape[0],
@@ -675,277 +615,51 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self.output_projection.weight, mean=0, std=self.output_embed_dim ** -0.5
             )
 
-    def build_decoder_layer(self, args, no_encoder_attn=False):
-        return TransformerDecoderLayer(args, no_encoder_attn)
+    def build_encoder_layer(self, args):
+        return TransformerEncoderLayer(args)
 
-    def forward(
-        self,
-        prev_output_tokens,
-        encoder_out: Optional[EncoderOut] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        features_only: bool = False,
-        full_context_alignment: bool = False,
-        alignment_layer: Optional[int] = None,
-        alignment_heads: Optional[int] = None,
-        src_lengths: Optional[Any] = None,
-        return_all_hiddens: bool = False,
-    ):
-        """
-        Args:
-            prev_output_tokens (LongTensor): previous decoder outputs of shape
-                `(batch, tgt_len)`, for teacher forcing
-            encoder_out (optional): output from the encoder, used for
-                encoder-side attention
-            incremental_state (dict): dictionary used for storing state during
-                :ref:`Incremental decoding`
-            features_only (bool, optional): only return features without
-                applying output layer (default: False).
-            full_context_alignment (bool, optional): don't apply
-                auto-regressive mask to self-attention (default: False).
+    def forward(self, encoder_out: AutoEncoderOut):
+        input = encoder_out.encoder_out
+        padding_mask = encoder_out.encoder_padding_mask
 
-        Returns:
-            tuple:
-                - the decoder's output of shape `(batch, tgt_len, vocab)`
-                - a dictionary with any model-specific outputs
-        """
-        x, extra = self.extract_features(
-            prev_output_tokens,
-            encoder_out=encoder_out,
-            incremental_state=incremental_state,
-            full_context_alignment=full_context_alignment,
-            alignment_layer=alignment_layer,
-            alignment_heads=alignment_heads,
-        )
-        if not features_only:
-            x = self.output_layer(x)
-        return x, extra
-
-    def extract_features(
-        self,
-        prev_output_tokens,
-        encoder_out: Optional[EncoderOut] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        full_context_alignment: bool = False,
-        alignment_layer: Optional[int] = None,
-        alignment_heads: Optional[int] = None,
-    ):
-        return self.extract_features_scriptable(
-            prev_output_tokens,
-            encoder_out,
-            incremental_state,
-            full_context_alignment,
-            alignment_layer,
-            alignment_heads,
-        )
-
-    """
-    A scriptable subclass of this class has an extract_features method and calls
-    super().extract_features, but super() is not supported in torchscript. Aa copy of
-    this function is made to be used in the subclass instead.
-    """
-
-    def extract_features_scriptable(
-        self,
-        prev_output_tokens,
-        encoder_out: Optional[EncoderOut] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        full_context_alignment: bool = False,
-        alignment_layer: Optional[int] = None,
-        alignment_heads: Optional[int] = None,
-    ):
-        """
-        Similar to *forward* but only return features.
-
-        Includes several features from "Jointly Learning to Align and
-        Translate with Transformer Models" (Garg et al., EMNLP 2019).
-
-        Args:
-            full_context_alignment (bool, optional): don't apply
-                auto-regressive mask to self-attention (default: False).
-            alignment_layer (int, optional): return mean alignment over
-                heads at this layer (default: last layer).
-            alignment_heads (int, optional): only average alignment over
-                this many heads (default: all heads).
-
-        Returns:
-            tuple:
-                - the decoder's features of shape `(batch, tgt_len, embed_dim)`
-                - a dictionary with any model-specific outputs
-        """
-        if alignment_layer is None:
-            alignment_layer = self.num_layers - 1
-
-        # embed positions
-        positions = (
-            self.embed_positions(
-                prev_output_tokens, incremental_state=incremental_state
-            )
-            if self.embed_positions is not None
-            else None
-        )
-
-        if incremental_state is not None:
-            prev_output_tokens = prev_output_tokens[:, -1:]
-            if positions is not None:
-                positions = positions[:, -1:]
-
-        # embed tokens and positions
-        x = self.embed_scale * self.embed_tokens(prev_output_tokens)
-
-        if self.quant_noise is not None:
-            x = self.quant_noise(x)
-
-        if self.project_in_dim is not None:
-            x = self.project_in_dim(x)
-
-        if positions is not None:
-            x += positions
-
-        if self.layernorm_embedding is not None:
-            x = self.layernorm_embedding(x)
-
-        x = self.dropout_module(x)
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        self_attn_padding_mask: Optional[Tensor] = None
-        if self.cross_self_attention or prev_output_tokens.eq(self.padding_idx).any():
-            self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
-
-        # decoder layers
-        attn: Optional[Tensor] = None
-        inner_states: List[Optional[Tensor]] = [x]
-        for idx, layer in enumerate(self.layers):
-            if incremental_state is None and not full_context_alignment:
-                self_attn_mask = self.buffered_future_mask(x)
-            else:
-                self_attn_mask = None
-
-            x, layer_attn, _ = layer(
-                x,
-                encoder_out.encoder_out if encoder_out is not None else None,
-                encoder_out.encoder_padding_mask if encoder_out is not None else None,
-                incremental_state,
-                self_attn_mask=self_attn_mask,
-                self_attn_padding_mask=self_attn_padding_mask,
-                need_attn=bool((idx == alignment_layer)),
-                need_head_weights=bool((idx == alignment_layer)),
-            )
-            inner_states.append(x)
-            if layer_attn is not None and idx == alignment_layer:
-                attn = layer_attn.float().to(x)
-
-        if attn is not None:
-            if alignment_heads is not None:
-                attn = attn[:alignment_heads]
-
-            # average probabilities over heads
-            attn = attn.mean(dim=0)
+        # encoder layers
+        for layer in self.layers:
+            input = layer(input, padding_mask)
 
         if self.layer_norm is not None:
-            x = self.layer_norm(x)
+            input = self.layer_norm(input)
 
-        # T x B x C -> B x T x C
-        x = x.transpose(0, 1)
+        input = input.transpose(0, 1)
+        input = self.output_projection(input)
 
-        if self.project_out_dim is not None:
-            x = self.project_out_dim(x)
-
-        return x, {"attn": [attn], "inner_states": inner_states}
-
-    def output_layer(self, features):
-        """Project features to the vocabulary size."""
-        if self.adaptive_softmax is None:
-            # project back to size of vocabulary
-            return self.output_projection(features)
-        else:
-            return features
-
-    def max_positions(self):
-        """Maximum output length supported by the decoder."""
-        if self.embed_positions is None:
-            return self.max_target_positions
-        return min(self.max_target_positions, self.embed_positions.max_positions)
-
-    def buffered_future_mask(self, tensor):
-        dim = tensor.size(0)
-        # self._future_mask.device != tensor.device is not working in TorchScript. This is a workaround.
-        if (
-            self._future_mask.size(0) == 0
-            or (not self._future_mask.device == tensor.device)
-            or self._future_mask.size(0) < dim
-        ):
-            self._future_mask = torch.triu(
-                utils.fill_with_neg_inf(torch.zeros([dim, dim])), 1
-            )
-        self._future_mask = self._future_mask.to(tensor)
-        return self._future_mask[:dim, :dim]
+        return AutoEncoderOut(
+            encoder_out=encoder_out.encoder_out,  # T x B x C
+            encoder_padding_mask=encoder_out.encoder_padding_mask,  # B x T
+            encoder_embedding=encoder_out.encoder_embedding,  # B x T x C
+            encoder_states=encoder_out.encoder_states,  # List[T x B x C]
+            src_tokens=encoder_out.src_tokens,
+            src_lengths=encoder_out.src_lengths,
+            current_src=encoder_out.current_src,
+            autodecoder_out=input,
+        )
 
     def upgrade_state_dict_named(self, state_dict, name):
         """Upgrade a (possibly old) state dict for new versions of fairseq."""
-        if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
-            weights_key = "{}.embed_positions.weights".format(name)
-            if weights_key in state_dict:
-                del state_dict[weights_key]
-            state_dict[
-                "{}.embed_positions._float_tensor".format(name)
-            ] = torch.FloatTensor(1)
-
-        if f"{name}.output_projection.weight" not in state_dict:
-            if self.share_input_output_embed:
-                embed_out_key = f"{name}.embed_tokens.weight"
-            else:
-                embed_out_key = f"{name}.embed_out"
-            if embed_out_key in state_dict:
-                state_dict[f"{name}.output_projection.weight"] = state_dict[
-                    embed_out_key
-                ]
-                if not self.share_input_output_embed:
-                    del state_dict[embed_out_key]
-
         for i in range(self.num_layers):
             # update layer norms
-            layer_norm_map = {
-                "0": "self_attn_layer_norm",
-                "1": "encoder_attn_layer_norm",
-                "2": "final_layer_norm",
-            }
-            for old, new in layer_norm_map.items():
-                for m in ("weight", "bias"):
-                    k = "{}.layers.{}.layer_norms.{}.{}".format(name, i, old, m)
-                    if k in state_dict:
-                        state_dict[
-                            "{}.layers.{}.{}.{}".format(name, i, new, m)
-                        ] = state_dict[k]
-                        del state_dict[k]
+            self.layers[i].upgrade_state_dict_named(
+                state_dict, "{}.layers.{}".format(name, i)
+            )
 
         version_key = "{}.version".format(name)
-        if utils.item(state_dict.get(version_key, torch.Tensor([1]))[0]) <= 2:
+        if utils.item(state_dict.get(version_key, torch.Tensor([1]))[0]) < 2:
             # earlier checkpoints did not normalize after the stack of layers
             self.layer_norm = None
             self.normalize = False
             state_dict[version_key] = torch.Tensor([1])
-
         return state_dict
 
-
-def Embedding(num_embeddings, embedding_dim, padding_idx):
-    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
-    nn.init.constant_(m.weight[padding_idx], 0)
-    return m
-
-
-def Linear(in_features, out_features, bias=True):
-    m = nn.Linear(in_features, out_features, bias)
-    nn.init.xavier_uniform_(m.weight)
-    if bias:
-        nn.init.constant_(m.bias, 0.0)
-    return m
-
-
-@register_model_architecture("transformer", "transformer")
+@register_model_architecture("autoformerwithae", "autoformerwithae")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
@@ -988,57 +702,3 @@ def base_architecture(args):
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
     args.tie_adaptive_weights = getattr(args, "tie_adaptive_weights", False)
-
-
-@register_model_architecture("transformer", "transformer_iwslt_de_en")
-def transformer_iwslt_de_en(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1024)
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)
-    args.encoder_layers = getattr(args, "encoder_layers", 6)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 512)
-    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 1024)
-    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
-    args.decoder_layers = getattr(args, "decoder_layers", 6)
-    base_architecture(args)
-
-
-@register_model_architecture("transformer", "transformer_wmt_en_de")
-def transformer_wmt_en_de(args):
-    base_architecture(args)
-
-
-# parameters used in the "Attention Is All You Need" paper (Vaswani et al., 2017)
-@register_model_architecture("transformer", "transformer_vaswani_wmt_en_de_big")
-def transformer_vaswani_wmt_en_de_big(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 4096)
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 1024)
-    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 4096)
-    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
-    args.dropout = getattr(args, "dropout", 0.3)
-    base_architecture(args)
-
-
-@register_model_architecture("transformer", "transformer_vaswani_wmt_en_fr_big")
-def transformer_vaswani_wmt_en_fr_big(args):
-    args.dropout = getattr(args, "dropout", 0.1)
-    transformer_vaswani_wmt_en_de_big(args)
-
-
-@register_model_architecture("transformer", "transformer_wmt_en_de_big")
-def transformer_wmt_en_de_big(args):
-    args.attention_dropout = getattr(args, "attention_dropout", 0.1)
-    transformer_vaswani_wmt_en_de_big(args)
-
-
-# default parameters used in tensor2tensor implementation
-@register_model_architecture("transformer", "transformer_wmt_en_de_big_t2t")
-def transformer_wmt_en_de_big_t2t(args):
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-    args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
-    args.attention_dropout = getattr(args, "attention_dropout", 0.1)
-    args.activation_dropout = getattr(args, "activation_dropout", 0.1)
-    transformer_vaswani_wmt_en_de_big(args)
