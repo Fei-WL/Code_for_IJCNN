@@ -276,37 +276,6 @@ class AutoformerModel(FairseqEncoderDecoderModel):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
 
-    def max_positions(self):
-        """Maximum input length supported by the encoder."""
-        if self.embed_positions is None:
-            return self.max_source_positions
-        return min(self.max_source_positions, self.embed_positions.max_positions)
-
-    def upgrade_state_dict_named(self, state_dict, name):
-        """Upgrade a (possibly old) state dict for new versions of fairseq."""
-        if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
-            weights_key = "{}.embed_positions.weights".format(name)
-            if weights_key in state_dict:
-                print("deleting {0}".format(weights_key))
-                del state_dict[weights_key]
-            state_dict[
-                "{}.embed_positions._float_tensor".format(name)
-            ] = torch.FloatTensor(1)
-        for i in range(self.num_layers):
-            # update layer norms
-            self.layers[i].upgrade_state_dict_named(
-                state_dict, "{}.layers.{}".format(name, i)
-            )
-
-        version_key = "{}.version".format(name)
-        if utils.item(state_dict.get(version_key, torch.Tensor([1]))[0]) < 2:
-            # earlier checkpoints did not normalize after the stack of layers
-            self.layer_norm = None
-            self.normalize = False
-            state_dict[version_key] = torch.Tensor([1])
-        return state_dict
-
-
 @register_model_architecture("sautoformer", "sautoformer")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
