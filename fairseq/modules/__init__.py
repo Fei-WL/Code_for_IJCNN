@@ -38,6 +38,7 @@ from .vggblock import VGGBlock
 from .context_layer import ContextDecoderLayer, ContextEncoderLayer
 from .autoformer_layer import AutoformerEncoderLayer
 from .s_autoformer_layer import SAutoformerEncoderLayer
+from .autoformersingle_layer import AutoformerSingleEncoderLayer
 
 __all__ = [
     "AdaptiveInput",
@@ -80,4 +81,5 @@ __all__ = [
     "ContextEncoderLayer",
     "AutoformerEncoderLayer",
     "SAutoformerEncoderLayer",
+    "AutoformerSingleEncoderLayer",
 ]
