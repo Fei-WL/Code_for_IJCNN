@@ -503,7 +503,7 @@ class ContextAwareEncoder(FairseqEncoder):
         curr_length = len(max(curr, key=len))
         prev_length = len(max(prev, key=len))
         max_length = [curr_length, prev_length]
-        pad_length = max(max_length)
+        pad_length = max(max_length) * 2
 
         prev = self.pad(prev, pad_length)
         curr = self.pad(curr, pad_length)
@@ -574,7 +574,6 @@ class ContextAwareEncoder(FairseqEncoder):
         gate = self.gate_activate_fn(self.gate(cat))
         gate = self.gate_activate_dropout_module(gate)
 
-        print("curr.shape:{}, gate.shape:{}, prev.shape:{}".format(curr.shape, gate.shape, prev.shape))
         encoder_out = gate * curr + (1 - gate) * prev
 
         residual = encoder_out
