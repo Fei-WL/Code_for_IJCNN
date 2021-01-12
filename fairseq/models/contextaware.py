@@ -574,6 +574,7 @@ class ContextAwareEncoder(FairseqEncoder):
         gate = self.gate_activate_fn(self.gate(cat))
         gate = self.gate_activate_dropout_module(gate)
 
+        print("curr.shape:{}, gate.shape:{}, prev.shape:{}".format(curr.shape, gate.shape, prev.shape))
         encoder_out = gate * curr + (1 - gate) * prev
 
         residual = encoder_out
