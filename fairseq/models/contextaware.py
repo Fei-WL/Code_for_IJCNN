@@ -311,6 +311,7 @@ class ContextAwareEncoder(FairseqEncoder):
         self.register_buffer("version", torch.Tensor([3]))
 
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8)
+        self.quant_noise_pq = getattr(args, "quant_noise_pq", 0)
 
         self.embed_dim = args.encoder_embed_dim
 
@@ -394,7 +395,7 @@ class ContextAwareEncoder(FairseqEncoder):
         self.gate = self.build_fc1(
             self.embed_dim,
             1,
-            self.quant_noise,
+            self.quant_noise_pq,
             self.quant_noise_block_size,
         )
         self.gate_activate_fn = utils.get_activation_fn(
@@ -407,13 +408,13 @@ class ContextAwareEncoder(FairseqEncoder):
         self.fc1 = self.build_fc1(
             self.embed_dim,
             args.encoder_ffn_embed_dim,
-            self.quant_noise,
+            self.quant_noise_pq,
             self.quant_noise_block_size,
         )
         self.fc2 = self.build_fc2(
             args.encoder_ffn_embed_dim,
             self.embed_dim,
-            self.quant_noise,
+            self.quant_noise_pq,
             self.quant_noise_block_size,
         )
 
@@ -428,7 +429,7 @@ class ContextAwareEncoder(FairseqEncoder):
             vdim=getattr(args, "encoder_embed_dim", None),
             dropout=args.attention_dropout,
             encoder_decoder_attention=True,
-            q_noise=self.quant_noise,
+            q_noise=self.quant_noise_pq,
             qn_block_size=self.quant_noise_block_size,
         )
 
@@ -438,7 +439,7 @@ class ContextAwareEncoder(FairseqEncoder):
             args.encoder_attention_heads,
             dropout=args.attention_dropout,
             self_attention=True,
-            q_noise=self.quant_noise,
+            q_noise=self.quant_noise_pq,
             qn_block_size=self.quant_noise_block_size,
         )
 
