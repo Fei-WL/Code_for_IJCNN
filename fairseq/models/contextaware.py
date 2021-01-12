@@ -418,6 +418,8 @@ class ContextAwareEncoder(FairseqEncoder):
             self.quant_noise_block_size,
         )
 
+        self.final_layer_norm = LayerNorm(embed_dim)
+
     def build_encoder_layer(self, args):
         return TransformerEncoderLayer(args)
 
@@ -574,23 +576,22 @@ class ContextAwareEncoder(FairseqEncoder):
         gate = self.gate_activate_fn(self.gate(cat))
         gate = self.gate_activate_dropout_module(gate)
 
-        print("curr.shape: {}".format(curr.shape))
         curr = (gate * torch.cat((curr, curr), dim=0))[:curr.shape[0], :, :]
         prev = ((1-gate) * torch.cat((prev, prev), dim=0))[:prev.shape[0], :, :]
-        print("prev.shape: {}".format(prev.shape))
-
         encoder_out = curr + prev
 
         residual = encoder_out
         if self.normalize_before:
-            encoder_out = self.layer_norm(encoder_out)
-
+            encoder_out = self.final_layer_norm(encoder_out)
         encoder_out = self.activation_fn(self.fc1(encoder_out))
         encoder_out = self.activation_dropout_module(encoder_out)
         encoder_out = self.fc2(encoder_out)
         encoder_out = self.dropout_module(encoder_out)
         encoder_out = encoder_out + residual
         if not self.normalize_before:
+            encoder_out = self.final_layer_norm(encoder_out)
+
+        if self.layer_norm is not None:
             encoder_out = self.layer_norm(encoder_out)
 
         return EncoderOut(
