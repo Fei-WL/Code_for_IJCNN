@@ -575,8 +575,8 @@ class ContextAwareEncoder(FairseqEncoder):
         gate = self.gate_activate_dropout_module(gate)
 
         print("curr.shape: {}".format(curr.shape))
-        curr = gate * torch.cat((curr, curr), dim=0)[:curr.shape[0], :, :]
-        prev = (1-gate) * torch.cat((prev, prev), dim=0)[:prev.shape[0], :, :]
+        curr = (gate * torch.cat((curr, curr), dim=0))[:curr.shape[0], :, :]
+        prev = ((1-gate) * torch.cat((prev, prev), dim=0))[:prev.shape[0], :, :]
         print("prev.shape: {}".format(prev.shape))
 
         encoder_out = curr + prev
