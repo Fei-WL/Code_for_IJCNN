@@ -36,7 +36,7 @@ DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
-@register_model("autoformerwithae")
+@register_model("autoformerwithaesingle")
 class AutoformerModel(FairseqAEEncoderDecoderModel):
     @classmethod
     def hub_models(cls):
