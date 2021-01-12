@@ -503,7 +503,7 @@ class ContextAwareEncoder(FairseqEncoder):
         curr_length = len(max(curr, key=len))
         prev_length = len(max(prev, key=len))
         max_length = [curr_length, prev_length]
-        pad_length = max(max_length) * 2
+        pad_length = max(max_length)
 
         prev = self.pad(prev, pad_length)
         curr = self.pad(curr, pad_length)
@@ -574,7 +574,12 @@ class ContextAwareEncoder(FairseqEncoder):
         gate = self.gate_activate_fn(self.gate(cat))
         gate = self.gate_activate_dropout_module(gate)
 
-        encoder_out = gate * curr + (1 - gate) * prev
+        print("curr.shape: {}".format(curr.shape))
+        curr = gate * torch.cat((curr, curr), dim=0)[:curr.shape[0], :, :]
+        prev = (1-gate) * torch.cat((prev, prev), dim=0)[:prev.shape[0], :, :]
+        print("prev.shape: {}".format(prev.shape))
+
+        encoder_out = curr + prev
 
         residual = encoder_out
         if self.normalize_before:
