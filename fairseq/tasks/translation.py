@@ -443,6 +443,6 @@ class TranslationTask(LegacyFairseqTask):
             logger.info("example hypothesis: " + hyps[0])
             logger.info("example reference: " + refs[0])
         if self.args.eval_tokenized_bleu:
-            return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none")
+            return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none", force=True)
         else:
-            return sacrebleu.corpus_bleu(hyps, [refs])
+            return sacrebleu.corpus_bleu(hyps, [refs], force=True)

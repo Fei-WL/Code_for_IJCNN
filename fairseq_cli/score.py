@@ -55,7 +55,6 @@ def cli_main():
 
     if args.sacrebleu:
         import sacrebleu
-        print("sacrebleu")
         def score(fdsys):
             with open(args.ref) as fdref:
                 print(sacrebleu.corpus_bleu(fdsys, [fdref], force=True))
