@@ -15,20 +15,8 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fairseq.models.fairseq_encoder import AutoEncoderOut
-from fairseq.models.transformer import TransformerEncoderLayer
 from fairseq.models.autoformerwithae import AutoEncoderDecoder
 from fairseq.models.autoformersingle import AutoformerSingleEncoder, TransformerDecoder, Embedding
-from fairseq.modules import (
-    AdaptiveSoftmax,
-    FairseqDropout,
-    LayerDropModuleList,
-    LayerNorm,
-    PositionalEmbedding,
-    SinusoidalPositionalEmbedding,
-    AutoformerEncoderLayer,
-)
-from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
 
 

@@ -15,7 +15,7 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fairseq.models.fairseq_encoder import EncoderOut
+from fairseq.models.fairseq_encoder import AutoEncoderOut
 from fairseq.models.transformer import TransformerDecoder, Embedding, Linear
 from fairseq.modules import (
     FairseqDropout,
@@ -419,6 +419,9 @@ class AutoformerSingleEncoder(FairseqEncoder):
         curr_encoder_padding_mask, \
         prev_encoder_padding_mask  = self.split(src_tokens)
 
+        # B x T x C
+        curr_src = curr
+
         curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
         prev, prev_encoder_embedding = self.forward_embedding(prev, 0)
 
@@ -441,17 +444,19 @@ class AutoformerSingleEncoder(FairseqEncoder):
         if self.layer_norm is not None:
             curr = self.layer_norm(curr)
 
-        return EncoderOut(
+        return AutoEncoderOut(
             encoder_out=curr,  # T x B x C
             encoder_padding_mask=curr_encoder_padding_mask,  # B x T
             encoder_embedding=curr_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
+            current_src=curr_src, # B x T x C
+            autodecoder_out=None,
         )
 
     @torch.jit.export
-    def reorder_encoder_out(self, encoder_out: EncoderOut, new_order):
+    def reorder_encoder_out(self, encoder_out: AutoEncoderOut, new_order):
         """
         Reorder encoder output according to *new_order*.
 
@@ -485,6 +490,12 @@ class AutoformerSingleEncoder(FairseqEncoder):
             if encoder_embedding is None
             else encoder_embedding.index_select(0, new_order)
         )
+
+        encoder_states = encoder_out.encoder_states
+        if encoder_states is not None:
+            for idx, state in enumerate(encoder_states):
+                encoder_states[idx] = state.index_select(1, new_order)
+
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
             src_tokens = src_tokens.index_select(0, new_order)
@@ -493,19 +504,25 @@ class AutoformerSingleEncoder(FairseqEncoder):
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
 
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
+        current_src = encoder_out.current_src
+        if current_src is not None:
+            current_src = current_src.index_select(0, new_order)
 
-        return EncoderOut(
+        autodecoder_out = encoder_out.autodecoder_out
+        if autodecoder_out is not None:
+            autodecoder_out = autodecoder_out.index_select(0, new_order)
+
+        return AutoEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
             encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
+            current_src=current_src, # B x T x C
+            autodecoder_out=autodecoder_out,
         )
+
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
