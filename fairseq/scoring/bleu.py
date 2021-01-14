@@ -63,6 +63,7 @@ class SacrebleuScorer(BaseScorer):
         if order != 4:
             raise NotImplementedError
         # tokenization and lowercasing are performed by self.tokenizer instead.
+        print("Evaluate sacrebleu.")
         return self.sacrebleu.corpus_bleu(
             self.pred, [self.ref], tokenize="none", force=True,
         ).format()
