@@ -64,7 +64,7 @@ class SacrebleuScorer(BaseScorer):
             raise NotImplementedError
         # tokenization and lowercasing are performed by self.tokenizer instead.
         return self.sacrebleu.corpus_bleu(
-            self.pred, [self.ref], tokenize="none"
+            self.pred, [self.ref], tokenize="none", force=True,
         ).format()
 
 
