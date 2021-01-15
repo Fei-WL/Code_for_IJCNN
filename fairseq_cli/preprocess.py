@@ -250,7 +250,7 @@ def main(args):
     def make_all(lang, vocab):
         if args.trainpref:
             make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
-        if args.context:
+        if args.context and lang != args.target_lang:
             if args.trainprevpref:
                 make_dataset(vocab, args.trainprevpref, "train_prev", lang, num_workers=args.workers)
             if args.trainpostpref:
@@ -261,7 +261,7 @@ def main(args):
                 make_dataset(
                     vocab, validpref, outprefix, lang, num_workers=args.workers
                 )
-            if args.context:
+            if args.context and lang != args.target_lang:
                 if args.validprevpref:
                     make_dataset(vocab, args.validprevpref, "valid_prev", lang, num_workers=args.workers)
                 if args.validpostpref:
@@ -270,7 +270,7 @@ def main(args):
             for k, testpref in enumerate(args.testpref.split(",")):
                 outprefix = "test{}".format(k) if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
-            if args.context:
+            if args.context and lang != args.target_lang:
                 if args.testprevpref:
                     make_dataset(vocab, args.testprevpref, "test_prev", lang, num_workers=args.workers)
                 if args.testpostpref:
