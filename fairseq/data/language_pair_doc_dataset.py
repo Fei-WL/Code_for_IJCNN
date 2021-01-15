@@ -26,6 +26,8 @@ def collate(
     if len(samples) == 0:
         return {}
 
+    logger.info("samples:{}".format(samples))
+
     def merge(key, left_pad, move_eos_to_beginning=False, pad_to_length=None):
         return data_utils.collate_tokens(
             [s[key] for s in samples],
@@ -64,6 +66,7 @@ def collate(
         align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
         return 1.0 / align_weights.float()
 
+
     id = torch.LongTensor([s["id"] for s in samples])
     src_tokens = merge(
         "source",
@@ -77,6 +80,9 @@ def collate(
     src_lengths, sort_order = src_lengths.sort(descending=True)
     id = id.index_select(0, sort_order)
     src_tokens = src_tokens.index_select(0, sort_order)
+
+    logger.info("src_tokens before merge and index select:{}".format(samples["source"]))
+    logger.info("src_tokens after merge and index select:{}, {}".format(src_tokens, src_tokens.size()))
 
     prev_output_tokens = None
     target = None
@@ -117,6 +123,8 @@ def collate(
         "net_input": {
             "src_tokens": src_tokens,
             "src_lengths": src_lengths,
+            "prev_tokens": None,
+            "post_tokens": None,
         },
         "target": target,
     }
@@ -165,50 +173,14 @@ def collate(
     return batch
 
 
-class LanguagePairDataset(FairseqDataset):
-    """
-    A pair of torch.utils.data.Datasets.
-
-    Args:
-        src (torch.utils.data.Dataset): source dataset to wrap
-        src_sizes (List[int]): source sentence lengths
-        src_dict (~fairseq.data.Dictionary): source vocabulary
-        tgt (torch.utils.data.Dataset, optional): target dataset to wrap
-        tgt_sizes (List[int], optional): target sentence lengths
-        tgt_dict (~fairseq.data.Dictionary, optional): target vocabulary
-        left_pad_source (bool, optional): pad source tensors on the left side
-            (default: True).
-        left_pad_target (bool, optional): pad target tensors on the left side
-            (default: False).
-        shuffle (bool, optional): shuffle dataset elements before batching
-            (default: True).
-        input_feeding (bool, optional): create a shifted version of the targets
-            to be passed into the model for teacher forcing (default: True).
-        remove_eos_from_source (bool, optional): if set, removes eos from end
-            of source if it's present (default: False).
-        append_eos_to_target (bool, optional): if set, appends eos to end of
-            target if it's absent (default: False).
-        align_dataset (torch.utils.data.Dataset, optional): dataset
-            containing alignments.
-        constraints (Tensor, optional): 2d tensor with a concatenated, zero-
-            delimited list of constraints for each sentence.
-        append_bos (bool, optional): if set, appends bos to the beginning of
-            source/target sentence.
-        num_buckets (int, optional): if set to a value greater than 0, then
-            batches will be bucketed into the given number of batch shapes.
-        src_lang_id (int, optional): source language ID, if set, the collated batch
-            will contain a field 'src_lang_id' in 'net_input' which indicates the
-            source language of the samples.
-        tgt_lang_id (int, optional): target language ID, if set, the collated batch
-            will contain a field 'tgt_lang_id' which indicates the target language
-             of the samples.
-    """
-
+class LanguagePairDocDataset(FairseqDataset):
     def __init__(
         self,
         src,
         src_sizes,
         src_dict,
+        prev=None,
+        post=None,
         tgt=None,
         tgt_sizes=None,
         tgt_dict=None,
@@ -237,6 +209,8 @@ class LanguagePairDataset(FairseqDataset):
             ), "Source and target must contain the same number of examples"
         self.src = src
         self.tgt = tgt
+        self.prev = prev
+        self.post = post
         self.src_sizes = np.array(src_sizes)
         self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
         self.sizes = (
@@ -304,6 +278,8 @@ class LanguagePairDataset(FairseqDataset):
     def __getitem__(self, index):
         tgt_item = self.tgt[index] if self.tgt is not None else None
         src_item = self.src[index]
+        prev_item = self.prev[index]
+        post_item = self.post[index]
         # Append EOS to end of tgt sentence if it does not have an EOS and remove
         # EOS from end of src sentence if it exists. This is useful when we use
         # use existing datasets for opposite directions i.e., when we want to
@@ -321,16 +297,26 @@ class LanguagePairDataset(FairseqDataset):
             bos = self.src_dict.bos()
             if self.src[index][0] != bos:
                 src_item = torch.cat([torch.LongTensor([bos]), self.src[index]])
+            if self.prev[index][0] != bos:
+                prev_item = torch.cat([torch.LongTensor([bos]), self.prev[index]])
+            if self.post[index][0] != bos:
+                post_item = torch.cat([torch.LongTensor([bos]), self.post[index]])
 
         if self.remove_eos_from_source:
             eos = self.src_dict.eos()
             if self.src[index][-1] == eos:
                 src_item = self.src[index][:-1]
+            if self.prev[index][-1] == eos:
+                prev_item = self.prev[index][:-1]
+            if self.post[index][-1] == eos:
+                post_item = self.post[index][:-1]
 
         example = {
             "id": index,
             "source": src_item,
             "target": tgt_item,
+            "prev": prev_item,
+            "post": post_item,
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]
