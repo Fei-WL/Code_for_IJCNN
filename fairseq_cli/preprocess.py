@@ -254,7 +254,7 @@ def main(args):
             if args.trainprevpref:
                 make_dataset(vocab, args.trainprevpref, "train_prev", lang, num_workers=args.workers)
             if args.trainpostpref:
-                make_dataset(vocab, args.trianpostpref, "train_post", lang, num_workers=args.workers)
+                make_dataset(vocab, args.trainpostpref, "train_post", lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
                 outprefix = "valid{}".format(k) if k > 0 else "valid"
