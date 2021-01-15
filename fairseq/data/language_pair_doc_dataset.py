@@ -26,11 +26,26 @@ def collate(
     if len(samples) == 0:
         return {}
 
-    logger.info("samples:{}".format(samples))
+    def max_length():
+        src = [s["source"] for s in samples]
 
-    def merge(key, left_pad, move_eos_to_beginning=False, pad_to_length=None):
+        prev = []
+        post = []
+        if samples[0].get("prev", None) is not None:
+            prev = [s["prev"] for s in samples]
+        if samples[0].get("post", None) is not None:
+            post = [s["post"] for s in samples]
+
+        src_length = len(max(src, key=len))
+        prev_length = len(max(prev, key=len))
+        post_length = len(max(post, key=len))
+        max_len = max([src_length, prev_length, post_length])
+
+        return src, prev, post, max_len
+
+    def merge(tokens, left_pad, move_eos_to_beginning=False, pad_to_length=None):
         return data_utils.collate_tokens(
-            [s[key] for s in samples],
+            tokens,
             pad_idx,
             eos_idx,
             left_pad,
@@ -68,10 +83,13 @@ def collate(
 
 
     id = torch.LongTensor([s["id"] for s in samples])
+
+    src, prev, post, max_len = max_length()
+
     src_tokens = merge(
-        "source",
+        src,
         left_pad=left_pad_source,
-        pad_to_length=pad_to_length["source"] if pad_to_length is not None else None,
+        pad_to_length=max_len,
     )
     # sort by descending source length
     src_lengths = torch.LongTensor(
@@ -81,14 +99,26 @@ def collate(
     id = id.index_select(0, sort_order)
     src_tokens = src_tokens.index_select(0, sort_order)
 
-    logger.info("src_tokens before merge and index select:{}".format(samples["source"]))
-    logger.info("src_tokens after merge and index select:{}, {}".format(src_tokens, src_tokens.size()))
+    prev_tokens = merge(
+        prev,
+        left_pad=left_pad_source,
+        pad_to_length=max_len
+    )
+    prev_tokens = prev_tokens.index_select(0, sort_order)
+
+    if samples[0].get("post", None) is not None:
+        post_tokens = merge(
+            post,
+            left_pad=left_pad_source,
+            pad_to_length=max_len
+        )
+        post_tokens = post_tokens.index_select(0, sort_order)
 
     prev_output_tokens = None
     target = None
     if samples[0].get("target", None) is not None:
         target = merge(
-            "target",
+            [s["target"] for s in samples],
             left_pad=left_pad_target,
             pad_to_length=pad_to_length["target"]
             if pad_to_length is not None
@@ -101,12 +131,12 @@ def collate(
         ntokens = tgt_lengths.sum().item()
 
         if samples[0].get("prev_output_tokens", None) is not None:
-            prev_output_tokens = merge("prev_output_tokens", left_pad=left_pad_target)
+            prev_output_tokens = merge([s["prev_output_tokens"] for s in samples], left_pad=left_pad_target)
         elif input_feeding:
             # we create a shifted version of targets for feeding the
             # previous output token(s) into the next decoder step
             prev_output_tokens = merge(
-                "target",
+                [s["target"] for s in samples],
                 left_pad=left_pad_target,
                 move_eos_to_beginning=True,
                 pad_to_length=pad_to_length["target"]
@@ -123,8 +153,8 @@ def collate(
         "net_input": {
             "src_tokens": src_tokens,
             "src_lengths": src_lengths,
-            "prev_tokens": None,
-            "post_tokens": None,
+            "prev_tokens": prev_tokens,
+            "post_tokens": post_tokens,
         },
         "target": target,
     }
@@ -132,6 +162,9 @@ def collate(
         batch["net_input"]["prev_output_tokens"] = prev_output_tokens.index_select(
             0, sort_order
         )
+
+    logger.info("Size of src_tokens:{}\nSize of prev_tokens:{}\nSize of post_tokens:{}".format(
+        batch["net_input"]["src_tokens"].size(), batch["net_input"]["prev_tokens"].size(), batch["net_input"]["post_tokens"].size()))
 
     if samples[0].get("alignment", None) is not None:
         bsz, tgt_sz = batch["target"].shape
