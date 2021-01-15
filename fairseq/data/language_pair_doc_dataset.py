@@ -163,9 +163,6 @@ def collate(
             0, sort_order
         )
 
-    logger.info("Size of src_tokens:{}\nSize of prev_tokens:{}\nSize of post_tokens:{}".format(
-        batch["net_input"]["src_tokens"].size(), batch["net_input"]["prev_tokens"].size(), batch["net_input"]["post_tokens"].size()))
-
     if samples[0].get("alignment", None) is not None:
         bsz, tgt_sz = batch["target"].shape
         src_sz = batch["net_input"]["src_tokens"].shape[1]

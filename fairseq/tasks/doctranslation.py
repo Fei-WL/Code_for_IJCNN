@@ -53,7 +53,6 @@ def load_langpair_dataset(
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
-        logger.info("filename:{}".format(filename))
         return indexed_dataset.dataset_exists(filename, impl=dataset_impl)
 
     src_datasets = []
