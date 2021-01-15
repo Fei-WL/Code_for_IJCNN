@@ -183,7 +183,7 @@ def load_langpair_dataset(
 
 
 @register_task("doctranslation")
-class TranslationTask(LegacyFairseqTask):
+class DocTranslationTask(LegacyFairseqTask):
     """
     Translate from one (source) language to another (target) language.
 
