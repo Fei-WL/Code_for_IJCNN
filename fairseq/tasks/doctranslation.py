@@ -336,7 +336,6 @@ class DocTranslationTask(LegacyFairseqTask):
             num_buckets=self.args.num_batch_buckets,
             shuffle=(split != "test"),
             pad_to_multiple=self.args.required_seq_len_multiple,
-            context=getattr(self.args, "context", True)
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
