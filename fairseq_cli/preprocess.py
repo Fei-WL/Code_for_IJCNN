@@ -261,7 +261,7 @@ def main(args):
                 make_dataset(
                     vocab, validpref, outprefix, lang, num_workers=args.workers
                 )
-            if args.cotnext:
+            if args.context:
                 if args.validprevpref:
                     make_dataset(vocab, args.validprevpref, "valid_prev", lang, num_workers=args.workers)
                 if args.validpostpref:
@@ -270,7 +270,7 @@ def main(args):
             for k, testpref in enumerate(args.testpref.split(",")):
                 outprefix = "test{}".format(k) if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
-            if args.cotnext:
+            if args.context:
                 if args.testprevpref:
                     make_dataset(vocab, args.testprevpref, "test_prev", lang, num_workers=args.workers)
                 if args.testpostpref:
