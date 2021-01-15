@@ -34,7 +34,11 @@ class SacrebleuScorer(BaseScorer):
         import sacrebleu
 
         self.sacrebleu = sacrebleu
-        self.tokenizer = EvaluationTokenizer()
+        self.tokenizer = EvaluationTokenizer(
+            tokenizer_type=self.args.sacrebleu_tokenizer,
+            lowercase=self.args.sacrebleu_lowercase,
+            character_tokenization=self.args.sacrebleu_char_level,
+        )
 
     @staticmethod
     def add_args(parser):
