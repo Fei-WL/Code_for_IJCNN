@@ -46,6 +46,7 @@ def load_langpair_dataset(
     max_source_positions,
     max_target_positions,
     load_alignments=False,
+    truncate_source=None,
     num_buckets=0,
     shuffle=True,
     pad_to_multiple=1,
