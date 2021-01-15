@@ -97,7 +97,9 @@ def load_langpair_dataset(
                 raise FileNotFoundError(
                     "Dataset not found: {} ({})".format(split+"post", data_path)
                 )
-
+        logger.info("src_dataset path:{}\nprev_dataset path:{}\npost_dataset path:{}\ntgt_dataset path:{}".format(
+            prefix + src, prev_prefix + src, post_prefix + src, prefix + tgt
+        ))
         src_dataset = data_utils.load_indexed_dataset(
             prefix + src, src_dict, dataset_impl
         )
