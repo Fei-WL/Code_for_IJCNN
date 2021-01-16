@@ -376,14 +376,14 @@ class AutoformerTestEncoder(FairseqEncoder):
 
     def forward(
         self,
-        curr_tokens,
+        src_tokens,
         prev_tokens,
         post_tokens,
         src_lengths,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
-        curr, curr_encoder_embedding = self.forward_embedding(curr_tokens, 1)
+        curr, curr_encoder_embedding = self.forward_embedding(src_tokens, 1)
         prev, prev_encoder_embedding = self.forward_embedding(prev_tokens, 0)
         post, post_encoder_embedding = self.forward_embedding(post_tokens, 2)
 
@@ -393,7 +393,7 @@ class AutoformerTestEncoder(FairseqEncoder):
         post = post.transpose(0, 1)
 
         # compute padding mask
-        curr_encoder_padding_mask = curr_tokens.eq(self.padding_idx)
+        curr_encoder_padding_mask = src_tokens.eq(self.padding_idx)
         prev_encoder_padding_mask = prev_tokens.eq(self.padding_idx)
         post_encoder_padding_mask = post_tokens.eq(self.padding_idx)
 
