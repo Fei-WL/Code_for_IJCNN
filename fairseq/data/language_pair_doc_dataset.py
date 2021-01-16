@@ -153,9 +153,7 @@ def collate(
                 else None,
             )
     else:
-        ntokens = src_lengths.sum().item()
-
-    logger.info("This mini-batch has {} tokens".format(ntokens))
+        ntokens = ntokens
 
     batch = {
         "id": id,
@@ -221,7 +219,9 @@ class LanguagePairDocDataset(FairseqDataset):
         src_sizes,
         src_dict,
         prev=None,
+        prev_sizes=None,
         post=None,
+        post_sizes=None,
         tgt=None,
         tgt_sizes=None,
         tgt_dict=None,
@@ -253,12 +253,17 @@ class LanguagePairDocDataset(FairseqDataset):
         self.prev = prev
         self.post = post
         self.src_sizes = np.array(src_sizes)
+        self.prev_sizes = np.array(prev_sizes)
+        self.post_sizes = np.array(post_sizes) if post_sizes is not None else None
         self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
-        self.sizes = (
-            np.vstack((self.src_sizes, self.tgt_sizes)).T
-            if self.tgt_sizes is not None
-            else self.src_sizes
-        )
+        if self.tgt_sizes is not None and self.post_sizes is not None:
+            self.sizes = np.vstack((self.src_sizes, self.prev_sizes, self.post_sizes, self.tgt_sizes)).T
+        elif self.tgt_sizes is not None and self.post_sizes is None:
+            self.sizes = np.vstack((self.src_sizes, self.prev_sizes, self.tgt_sizes)).T
+        elif self.tgt_sizes is None and self.post_sizes is not None:
+            self.sizes = np.vstack((self.src_sizes, self.prev_sizes, self.post_sizes)).T
+        else:
+            self.sizes = np.vstack((self.src_sizes, self.prev_sizes)).T
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
         self.left_pad_source = left_pad_source
@@ -431,7 +436,7 @@ class LanguagePairDocDataset(FairseqDataset):
         """Return the number of tokens in a sample. This value is used to
         enforce ``--max-tokens`` during batching."""
         return max(
-            self.src_sizes[index],
+            self.src_sizes[index] + self.prev_sizes[index] + self.post_sizes[index],
             self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
         )
 
@@ -439,7 +444,7 @@ class LanguagePairDocDataset(FairseqDataset):
         """Return an example's size as a float or tuple. This value is used when
         filtering a dataset with ``--max-positions``."""
         return (
-            self.src_sizes[index],
+            self.src_sizes[index] + self.prev_sizes[index] + self.post_sizes[index],
             self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
         )
 
