@@ -81,7 +81,7 @@ def collate(
         align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
         return 1.0 / align_weights.float()
 
-
+    ntokens = 0
     id = torch.LongTensor([s["id"] for s in samples])
 
     src, prev, post, max_len = max_length()
@@ -98,6 +98,7 @@ def collate(
     src_lengths, sort_order = src_lengths.sort(descending=True)
     id = id.index_select(0, sort_order)
     src_tokens = src_tokens.index_select(0, sort_order)
+    ntokens += src_lengths.sum().item()
 
     prev_tokens = merge(
         prev,
@@ -105,6 +106,10 @@ def collate(
         pad_to_length=max_len
     )
     prev_tokens = prev_tokens.index_select(0, sort_order)
+    prev_lengths = torch.LongTensor(
+        [s["prev"].ne(pad_idx).long().sum() for s in samples]
+    )
+    ntokens += prev_lengths.sum().item()
 
     if samples[0].get("post", None) is not None:
         post_tokens = merge(
@@ -113,6 +118,10 @@ def collate(
             pad_to_length=max_len
         )
         post_tokens = post_tokens.index_select(0, sort_order)
+        post_lengths = torch.LongTensor(
+            [s["post"].ne(pad_idx).long().sum() for s in samples]
+        )
+        ntokens += post_lengths.sum().item()
 
     prev_output_tokens = None
     target = None
@@ -128,7 +137,7 @@ def collate(
         tgt_lengths = torch.LongTensor(
             [s["target"].ne(pad_idx).long().sum() for s in samples]
         ).index_select(0, sort_order)
-        ntokens = tgt_lengths.sum().item()
+        ntokens += tgt_lengths.sum().item()
 
         if samples[0].get("prev_output_tokens", None) is not None:
             prev_output_tokens = merge([s["prev_output_tokens"] for s in samples], left_pad=left_pad_target)
@@ -145,6 +154,8 @@ def collate(
             )
     else:
         ntokens = src_lengths.sum().item()
+
+    logger.info("This mini-batch has {} tokens".format(ntokens))
 
     batch = {
         "id": id,
