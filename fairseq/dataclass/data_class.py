@@ -53,6 +53,7 @@ class CommonParams(FairseqDataclass):
     seed: int = field(
         default=1, metadata={"help": "pseudo random number generator seed"}
     )
+    context: bool = field(default=False, metadata={"help": "whether document mt"})
     cpu: bool = field(default=False, metadata={"help": "use CPU instead of CUDA"})
     tpu: bool = field(default=False, metadata={"help": "use TPU instead of CUDA"})
     bf16: bool = field(default=False, metadata={"help": "use bfloat16; implies --tpu"})

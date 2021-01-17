@@ -17,7 +17,7 @@ from fairseq.models import (
     register_model_architecture,
 )
 from fairseq.models.fairseq_encoder import CtxEncoderOut
-from fairseq.models.transformer import TransformerEncoder
+from fairseq.models.transformer import TransformerEncoder, Embedding, Linear
 from fairseq.modules import (
     AdaptiveSoftmax,
     FairseqDropout,
@@ -256,6 +256,8 @@ class ContextModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        prev_tokens,
+        post_tokens,
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -269,7 +271,7 @@ class ContextModel(FairseqEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, prev_tokens, post_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -310,6 +312,8 @@ class ContextEncoder(FairseqEncoder):
     def __init__(self, args, dictionary, embed_tokens):
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
+
+        self.context = args.context
 
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
@@ -391,59 +395,18 @@ class ContextEncoder(FairseqEncoder):
             x = self.quant_noise(x)
         return x, embed
 
-    def split(self, tokens):
-        ctx_tokens = []
-        src_tokens = []
-        if find_index(tokens[0], self.sep_idx) == None:
-            ctx_tokens = None
-            src_tokens = tokens
-        else:
-            for idx in range(len(tokens)):
-                temp = utils.strip_pad(tokens[idx], self.padding_idx)
-                res = find_index(temp, self.sep_idx)
-
-                ctx_tokens.append(temp[:res[0]])
-                src_tokens.append(temp[res[0]+1:])
-
-            ctx_tokens = pad_sequence(ctx_tokens, batch_first=True, padding_value=self.padding_idx)
-            src_tokens = pad_sequence(src_tokens, batch_first=True, padding_value=self.padding_idx)
-
-        return ctx_tokens, src_tokens
-
     def forward(
         self,
         src_tokens,
+        prev_tokens,
+        post_tokens,
         src_lengths,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
-        """
-        Args:
-            src_tokens (LongTensor): tokens in the source language of shape
-                `(batch, src_len)`
-            src_lengths (torch.LongTensor): lengths of each source sentence of
-                shape `(batch)`
-            return_all_hiddens (bool, optional): also return all of the
-                intermediate hidden states (default: False).
-            token_embeddings (torch.Tensor, optional): precomputed embeddings
-                default `None` will recompute embeddings
 
-        Returns:
-            namedtuple:
-                - **encoder_out** (Tensor): the last encoder layer's output of
-                  shape `(src_len, batch, embed_dim)`
-                - **encoder_padding_mask** (ByteTensor): the positions of
-                  padding elements of shape `(batch, src_len)`
-                - **encoder_embedding** (Tensor): the (scaled) embedding lookup
-                  of shape `(batch, src_len, embed_dim)`
-                - **encoder_states** (List[Tensor]): all intermediate
-                  hidden states of shape `(src_len, batch, embed_dim)`.
-                  Only populated if *return_all_hiddens* is True.
-        """
-        ctx_tokens, src_tokens = self.split(src_tokens)
-
-        if ctx_tokens is not None:
-            ctx_out = self.context_encoder(ctx_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens)
+        if self.context:
+            ctx_out = self.context_encoder(prev_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens)
             context_out = ctx_out.encoder_out
             context_padding_mask = ctx_out.encoder_padding_mask
         else:
@@ -960,29 +923,6 @@ class ContextDecoder(FairseqIncrementalDecoder):
             state_dict[version_key] = torch.Tensor([1])
 
         return state_dict
-
-def find_index(_data_list, sep_id):
-    sep = sep_id
-    res = [idx for idx, i in enumerate(_data_list) if i == sep]
-    if len(res) == 0:
-        return None
-    else:
-        return res
-
-def Embedding(num_embeddings, embedding_dim, padding_idx):
-    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
-    nn.init.constant_(m.weight[padding_idx], 0)
-    return m
-
-
-def Linear(in_features, out_features, bias=True):
-    m = nn.Linear(in_features, out_features, bias)
-    nn.init.xavier_uniform_(m.weight)
-    if bias:
-        nn.init.constant_(m.bias, 0.0)
-    return m
-
 
 @register_model_architecture("context", "context")
 def base_architecture(args):
