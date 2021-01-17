@@ -106,6 +106,7 @@ def collate(
         [s["prev"].ne(pad_idx).long().sum() for s in samples]
     )
 
+    post_tokens = None
     if samples[0].get("post", None) is not None:
         post_tokens = merge(
             post,
