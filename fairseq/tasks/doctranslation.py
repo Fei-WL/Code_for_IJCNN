@@ -237,8 +237,6 @@ class DocTranslationTask(LegacyFairseqTask):
                             help='if >0, then bucket source and target lengths into N '
                                  'buckets and pad accordingly; this is useful on TPUs '
                                  'to minimize the number of compilations')
-        parser.add_argument('--context', default=True, metavar='CXT',
-                            help='whether load context content')
 
         # options for reporting BLEU during validation
         parser.add_argument('--eval-bleu', action='store_true',
