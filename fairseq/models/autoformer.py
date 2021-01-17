@@ -16,7 +16,7 @@ from fairseq.models import (
     register_model_architecture,
 )
 from fairseq.models.fairseq_encoder import EncoderOut
-from fairseq.models.transformer import TransformerDecoder, Embedding, Linear
+from fairseq.models.transformer import TransformerDecoder, Embedding
 from fairseq.modules import (
     FairseqDropout,
     LayerDropModuleList,
@@ -27,7 +27,6 @@ from fairseq.modules import (
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
 
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
@@ -237,6 +236,8 @@ class AutoformerModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        prev_tokens,
+        post_tokens,
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -250,7 +251,7 @@ class AutoformerModel(FairseqEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, prev_tokens, post_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -372,72 +373,28 @@ class AutoformerEncoder(FairseqEncoder):
             x = self.quant_noise(x)
         return x, embed
 
-    def pad(self, tokens, max_length):
-        bsz = len(tokens)
-        padded = tokens[0].new(bsz, max_length).fill_(self.padding_idx)
-        for idx in range(bsz):
-            padded[idx][:len(tokens[idx])].copy_(tokens[idx])
-
-        return padded.contiguous()
-
-    def split(self, _tokens):
-        curr = []
-        prev = []
-        post = []
-        for idx in range(len(_tokens)):
-            temp = utils.strip_pad(_tokens[idx], self.padding_idx)
-            res = find_index(temp, self.sep_idx)
-
-            if res is None:
-                prev.append(temp)
-                curr.append(temp)
-                post.append(temp)
-            else:
-                prev.append(temp[:res[0]])
-                curr.append(temp[res[0] + 1:res[-1]])
-                post.append(temp[res[-1] + 1:])
-
-        curr_length = len(max(curr, key=len))
-        prev_length = len(max(prev, key=len))
-        post_length = len(max(post, key=len))
-        max_length = [curr_length, prev_length, post_length]
-        pad_length = max(max_length)
-
-        prev = self.pad(prev, pad_length)
-        post = self.pad(post, pad_length)
-        curr = self.pad(curr, pad_length)
-
-        curr_encoder_padding_mask = curr.eq(self.padding_idx)
-        prev_encoder_padding_mask = prev.eq(self.padding_idx)
-        post_encoder_padding_mask = post.eq(self.padding_idx)
-
-        return curr.contiguous(), prev.contiguous(), post.contiguous(), \
-               curr_encoder_padding_mask.contiguous(), \
-               prev_encoder_padding_mask.contiguous(), \
-               post_encoder_padding_mask.contiguous()
-
     def forward(
         self,
         src_tokens,
+        prev_tokens,
+        post_tokens,
         src_lengths,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
-        curr, prev, post,\
-        curr_encoder_padding_mask, \
-        prev_encoder_padding_mask, \
-        post_encoder_padding_mask = self.split(src_tokens)
-
-        curr_src = curr
-
-        curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
-        prev, prev_encoder_embedding = self.forward_embedding(prev, 0)
-        post, post_encoder_embedding = self.forward_embedding(post, 2)
+        curr, curr_encoder_embedding = self.forward_embedding(src_tokens, 1)
+        prev, prev_encoder_embedding = self.forward_embedding(prev_tokens, 0)
+        post, post_encoder_embedding = self.forward_embedding(post_tokens, 2)
 
         # B x T x C -> T x B x C
         curr = curr.transpose(0, 1)
         prev = prev.transpose(0, 1)
         post = post.transpose(0, 1)
+
+        # compute padding mask
+        curr_encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        prev_encoder_padding_mask = prev_tokens.eq(self.padding_idx)
+        post_encoder_padding_mask = post_tokens.eq(self.padding_idx)
 
         encoder_states = [] if return_all_hiddens else None
 
@@ -549,14 +506,6 @@ class AutoformerEncoder(FairseqEncoder):
             self.normalize = False
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
-
-def find_index(_data_list, sep_id):
-    sep = sep_id
-    res = [idx for idx, i in enumerate(_data_list) if i == sep]
-    if len(res) == 0:
-        return None
-    else:
-        return res
 
 @register_model_architecture("autoformer", "autoformer")
 def base_architecture(args):

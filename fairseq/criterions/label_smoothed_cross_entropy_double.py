@@ -78,8 +78,7 @@ class LabelSmoothedCrossEntropyCriterionDouble(FairseqCriterion):
 
         aedecoder_lprobs = utils.log_softmax(aedecoder_out.autodecoder_out, dim=-1, onnx_trace=False)
         aedecoder_lprobs = aedecoder_lprobs.view(-1, aedecoder_lprobs.size(-1))
-
-        aedecoder_target = aedecoder_out.current_src.view(-1, 1)
+        aedecoder_target = aedecoder_out.src_tokens.view(-1, 1)
 
         decoder_loss, decoder_nll_loss = label_smoothed_nll_loss(
             decoder_lprobs,

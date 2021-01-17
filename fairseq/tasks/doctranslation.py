@@ -75,7 +75,6 @@ def load_langpair_dataset(
                 raise FileNotFoundError(
                     "Dataset not found: {} ({})".format(split, data_path)
                 )
-
         if split_exists(split_k+"_prev", src, tgt, src, data_path):
             prev_prefix = os.path.join(data_path, "{}.{}-{}.".format(split_k+"_prev", src, tgt))
         elif split_exists(split_k+"_prev", tgt, src, src, data_path):
@@ -92,37 +91,29 @@ def load_langpair_dataset(
         elif split_exists(split_k+"_post", tgt, src, src, data_path):
             post_prefix = os.path.join(data_path, "{}.{}-{}.".format(split_k+"_post", tgt, src))
         else:
-            if k > 0:
-                break
-            else:
-                raise FileNotFoundError(
-                    "Dataset not found: {} ({})".format(split+"post", data_path)
-                )
-        logger.info("src_dataset path:{}\nprev_dataset path:{}\npost_dataset path:{}\ntgt_dataset path:{}".format(
-            prefix + src, prev_prefix + src, post_prefix + src, prefix + tgt
-        ))
+            post_prefix = os.path.join(data_path, "{}.{}-{}.".format(split_k+"_post", src, tgt))
+
         src_dataset = data_utils.load_indexed_dataset(
             prefix + src, src_dict, dataset_impl
         )
         src_datasets.append(src_dataset)
 
-        tgt_dataset = data_utils.load_indexed_dataset(
-            prefix + tgt, tgt_dict, dataset_impl
-        )
-        if tgt_dataset is not None:
-            tgt_datasets.append(tgt_dataset)
-
         prev_dataset = data_utils.load_indexed_dataset(
             prev_prefix + src, src_dict, dataset_impl
         )
-        if prev_dataset is not None:
-            prev_datasets.append(prev_dataset)
+        prev_datasets.append(prev_dataset)
 
         post_dataset = data_utils.load_indexed_dataset(
             post_prefix + src, src_dict, dataset_impl
         )
         if post_dataset is not None:
             post_datasets.append(post_dataset)
+
+        tgt_dataset = data_utils.load_indexed_dataset(
+            prefix + tgt, tgt_dict, dataset_impl
+        )
+        if tgt_dataset is not None:
+            tgt_datasets.append(tgt_dataset)
 
         logger.info(
             "{} {} {}-{} {} examples".format(
@@ -135,19 +126,26 @@ def load_langpair_dataset(
 
     assert len(src_datasets) == len(tgt_datasets) and\
            len(prev_datasets) == len(src_datasets) and\
-           len(post_datasets) == len(src_datasets) or len(tgt_datasets) == 0
+           len(post_datasets) == len(src_datasets) or \
+           len(tgt_datasets) == 0 or \
+           len(post_datasets) == 0
 
     if len(src_datasets) == 1:
         src_dataset = src_datasets[0]
         prev_dataset = prev_datasets[0]
-        post_dataset = post_datasets[0]
+        post_dataset = post_datasets[0] if len(post_datasets) > 0 else None
         tgt_dataset = tgt_datasets[0] if len(tgt_datasets) > 0 else None
     else:
         sample_ratios = [1] * len(src_datasets)
         sample_ratios[0] = upsample_primary
         src_dataset = ConcatDataset(src_datasets, sample_ratios)
         prev_dataset = ConcatDataset(prev_datasets, sample_ratios)
-        post_dataset = ConcatDataset(post_datasets, sample_ratios)
+
+        if len(post_datasets) > 0:
+            post_dataset = ConcatDataset(post_datasets, sample_ratios)
+        else:
+            post_dataset = None
+
         if len(tgt_datasets) > 0:
             tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
         else:
@@ -164,6 +162,8 @@ def load_langpair_dataset(
             )
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
+    post_dataset_sizes = post_dataset.sizes if post_dataset is not None else None
+
     return LanguagePairDocDataset(
         src_dataset,
         src_dataset.sizes,
@@ -171,7 +171,7 @@ def load_langpair_dataset(
         prev_dataset,
         prev_dataset.sizes,
         post_dataset,
-        post_dataset.sizes,
+        post_dataset_sizes,
         tgt_dataset,
         tgt_dataset_sizes,
         tgt_dict,

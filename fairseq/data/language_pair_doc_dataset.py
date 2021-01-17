@@ -28,17 +28,15 @@ def collate(
 
     def max_length():
         src = [s["source"] for s in samples]
+        prev = [s["prev"] for s in samples]
 
-        prev = []
-        post = []
-        if samples[0].get("prev", None) is not None:
-            prev = [s["prev"] for s in samples]
+        post = None
         if samples[0].get("post", None) is not None:
             post = [s["post"] for s in samples]
 
         src_length = len(max(src, key=len))
         prev_length = len(max(prev, key=len))
-        post_length = len(max(post, key=len))
+        post_length = len(max(post, key=len)) if post is not None else 0
         max_len = max([src_length, prev_length, post_length])
 
         return src, prev, post, max_len
@@ -81,7 +79,6 @@ def collate(
         align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
         return 1.0 / align_weights.float()
 
-    ntokens = 0
     id = torch.LongTensor([s["id"] for s in samples])
 
     src, prev, post, max_len = max_length()
@@ -291,6 +288,28 @@ class LanguagePairDocDataset(FairseqDataset):
             )
             self.src_sizes = self.src.sizes
             logger.info("bucketing source lengths: {}".format(list(self.src.buckets)))
+
+            self.prev = BucketPadLengthDataset(
+                self.prev,
+                sizes=self.prev_sizes,
+                num_buckets=num_buckets,
+                pad_idx=self.src_dict.pad(),
+                left_pad=self.left_pad_source,
+            )
+            self.prev_sizes = self.prev.sizes
+            logger.info("bucketing previous lengths: {}".format(list(self.prev.buckets)))
+
+            if self.post is not None:
+                self.post = BucketPadLengthDataset(
+                    self.post,
+                    sizes=self.post_sizes,
+                    num_buckets=num_buckets,
+                    pad_idx=self.src_dict.pad(),
+                    left_pad=self.left_pad_source,
+                )
+                self.post_sizes = self.post.sizes
+                logger.info("bucketing post lengths: {}".format(list(self.post.buckets)))
+
             if self.tgt is not None:
                 self.tgt = BucketPadLengthDataset(
                     self.tgt,
@@ -322,7 +341,7 @@ class LanguagePairDocDataset(FairseqDataset):
         tgt_item = self.tgt[index] if self.tgt is not None else None
         src_item = self.src[index]
         prev_item = self.prev[index]
-        post_item = self.post[index]
+        post_item = self.post[index] if self.post is not None else None
         # Append EOS to end of tgt sentence if it does not have an EOS and remove
         # EOS from end of src sentence if it exists. This is useful when we use
         # use existing datasets for opposite directions i.e., when we want to
@@ -342,7 +361,7 @@ class LanguagePairDocDataset(FairseqDataset):
                 src_item = torch.cat([torch.LongTensor([bos]), self.src[index]])
             if self.prev[index][0] != bos:
                 prev_item = torch.cat([torch.LongTensor([bos]), self.prev[index]])
-            if self.post[index][0] != bos:
+            if self.post and self.post[index][0] != bos:
                 post_item = torch.cat([torch.LongTensor([bos]), self.post[index]])
 
         if self.remove_eos_from_source:
@@ -351,7 +370,7 @@ class LanguagePairDocDataset(FairseqDataset):
                 src_item = self.src[index][:-1]
             if self.prev[index][-1] == eos:
                 prev_item = self.prev[index][:-1]
-            if self.post[index][-1] == eos:
+            if self.post and self.post[index][-1] == eos:
                 post_item = self.post[index][:-1]
 
         example = {
@@ -432,17 +451,29 @@ class LanguagePairDocDataset(FairseqDataset):
     def num_tokens(self, index):
         """Return the number of tokens in a sample. This value is used to
         enforce ``--max-tokens`` during batching."""
+        src_sizes = self.src_sizes[index]
+        prev_sizes = self.prev_sizes[index]
+        post_sizes = self.post_sizes[index] if self.post_sizes is not None else 0
+
+        tgt_sizes = self.tgt_sizes[index]
+
         return max(
-            self.src_sizes[index] + self.prev_sizes[index] + self.post_sizes[index],
-            self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
+            src_sizes + prev_sizes + post_sizes,
+            tgt_sizes,
         )
 
     def size(self, index):
         """Return an example's size as a float or tuple. This value is used when
         filtering a dataset with ``--max-positions``."""
-        return (
-            self.src_sizes[index] + self.prev_sizes[index] + self.post_sizes[index],
-            self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
+        src_sizes = self.src_sizes[index]
+        prev_sizes = self.prev_sizes[index]
+        post_sizes = self.post_sizes[index] if self.post_sizes is not None else 0
+
+        tgt_sizes = self.tgt_sizes[index]
+
+        return max(
+            src_sizes + prev_sizes + post_sizes,
+            tgt_sizes,
         )
 
     def ordered_indices(self):

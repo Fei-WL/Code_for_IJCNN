@@ -233,6 +233,8 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        prev_tokens,
+        post_tokens,
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -246,7 +248,7 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, prev_tokens, post_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,

@@ -15,8 +15,8 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fairseq.models.fairseq_encoder import AutoEncoderOut
-from fairseq.models.autoformer import TransformerDecoder, find_index, Linear, Embedding
+from fairseq.models.fairseq_encoder import EncoderOut, AutoEncoderOut
+from fairseq.models.autoformer import TransformerDecoder, AutoformerEncoder, Embedding
 from fairseq.models.transformer import TransformerEncoderLayer
 from fairseq.modules import (
     AdaptiveSoftmax,
@@ -29,7 +29,6 @@ from fairseq.modules import (
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
 
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
@@ -245,6 +244,8 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        prev_tokens,
+        post_tokens,
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -258,7 +259,7 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, prev_tokens, post_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -285,289 +286,6 @@ class AutoformerModel(FairseqAEEncoderDecoderModel):
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
-
-class AutoformerEncoder(FairseqEncoder):
-    """
-    Transformer encoder consisting of *args.encoder_layers* layers. Each layer
-    is a :class:`TransformerEncoderLayer`.
-
-    Args:
-        args (argparse.Namespace): parsed command-line arguments
-        dictionary (~fairseq.data.Dictionary): encoding dictionary
-        embed_tokens (torch.nn.Embedding): input embedding
-    """
-
-    def __init__(self, args, dictionary, embed_tokens):
-        super().__init__(dictionary)
-        self.register_buffer("version", torch.Tensor([3]))
-
-        self.dropout_module = FairseqDropout(
-            args.dropout, module_name=self.__class__.__name__
-        )
-        self.encoder_layerdrop = args.encoder_layerdrop
-
-        embed_dim = embed_tokens.embedding_dim
-        self.padding_idx = embed_tokens.padding_idx
-        self.sep_idx = dictionary.sep()
-        self.max_source_positions = args.max_source_positions
-
-        self.embed_tokens = embed_tokens
-
-        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
-
-        self.embed_positions = (
-            PositionalEmbedding(
-                args.max_source_positions,
-                embed_dim,
-                self.padding_idx,
-                learned=args.encoder_learned_pos,
-            )
-            if not args.no_token_positional_embeddings
-            else None
-        )
-
-        if getattr(args, "layernorm_embedding", False):
-            self.layernorm_embedding = LayerNorm(embed_dim)
-        else:
-            self.layernorm_embedding = None
-
-        if not args.adaptive_input and args.quant_noise_pq > 0:
-            self.quant_noise = apply_quant_noise_(
-                nn.Linear(embed_dim, embed_dim, bias=False),
-                args.quant_noise_pq,
-                args.quant_noise_pq_block_size,
-            )
-        else:
-            self.quant_noise = None
-
-        if self.encoder_layerdrop > 0.0:
-            self.layers = LayerDropModuleList(p=self.encoder_layerdrop)
-        else:
-            self.layers = nn.ModuleList([])
-        self.layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
-        )
-        self.num_layers = len(self.layers)
-
-        if args.encoder_normalize_before:
-            self.layer_norm = LayerNorm(embed_dim)
-        else:
-            self.layer_norm = None
-
-    def build_encoder_layer(self, args):
-        return AutoformerEncoderLayer(args)
-
-    def seg_position(self, shape, position, device):
-        seg_pos = torch.tensor((), dtype=torch.int32)
-
-        seg_pos = seg_pos.new_empty(shape).fill_(position).to(device)
-
-        return seg_pos.contiguous()
-
-    def forward_embedding(
-        self, src_tokens, position, token_embedding: Optional[torch.Tensor] = None
-    ):
-        # embed tokens and positions
-        if token_embedding is None:
-            token_embedding = self.embed_tokens(src_tokens)
-        x = embed = self.embed_scale * token_embedding
-        seg_pos = self.seg_position(x.shape, position, src_tokens.device)
-        if self.embed_positions is not None:
-            x = embed + self.embed_positions(src_tokens)
-        if self.layernorm_embedding is not None:
-            x = self.layernorm_embedding(x)
-        x = x + seg_pos
-        x = self.dropout_module(x)
-        if self.quant_noise is not None:
-            x = self.quant_noise(x)
-        return x, embed
-
-    def pad(self, tokens, max_length):
-        bsz = len(tokens)
-        padded = tokens[0].new(bsz, max_length).fill_(self.padding_idx)
-        for idx in range(bsz):
-            padded[idx][:len(tokens[idx])].copy_(tokens[idx])
-
-        return padded.contiguous()
-
-    def split(self, _tokens):
-        curr = []
-        prev = []
-        post = []
-        for idx in range(len(_tokens)):
-            temp = utils.strip_pad(_tokens[idx], self.padding_idx)
-            res = find_index(temp, self.sep_idx)
-
-            prev.append(temp[:res[0]])
-            curr.append(temp[res[0] + 1:res[-1]])
-            post.append(temp[res[-1] + 1:])
-
-        curr_length = len(max(curr, key=len))
-        prev_length = len(max(prev, key=len))
-        post_length = len(max(post, key=len))
-        max_length = [curr_length, prev_length, post_length]
-        pad_length = max(max_length)
-
-        prev = self.pad(prev, pad_length)
-        post = self.pad(post, pad_length)
-        curr = self.pad(curr, pad_length)
-
-        curr_encoder_padding_mask = curr.eq(self.padding_idx)
-        prev_encoder_padding_mask = prev.eq(self.padding_idx)
-        post_encoder_padding_mask = post.eq(self.padding_idx)
-
-        return curr.contiguous(), prev.contiguous(), post.contiguous(), \
-               curr_encoder_padding_mask.contiguous(), \
-               prev_encoder_padding_mask.contiguous(), \
-               post_encoder_padding_mask.contiguous()
-
-    def forward(
-        self,
-        src_tokens,
-        src_lengths,
-        return_all_hiddens: bool = False,
-        token_embeddings: Optional[torch.Tensor] = None,
-    ):
-        curr, prev, post,\
-        curr_encoder_padding_mask, \
-        prev_encoder_padding_mask, \
-        post_encoder_padding_mask = self.split(src_tokens)
-
-        # B x T x C
-        curr_src = curr
-
-        curr, curr_encoder_embedding = self.forward_embedding(curr, 1)
-        prev, prev_encoder_embedding = self.forward_embedding(prev, 0)
-        post, post_encoder_embedding = self.forward_embedding(post, 2)
-
-        # B x T x C -> T x B x C
-        curr = curr.transpose(0, 1)
-        prev = prev.transpose(0, 1)
-        post = post.transpose(0, 1)
-
-        encoder_states = [] if return_all_hiddens else None
-
-        # encoder layers
-        for layer in self.layers:
-            curr, prev, post = layer(curr_x=curr, prev_x=prev, post_x=post,
-                                     curr_encoder_padding_mask=curr_encoder_padding_mask,
-                                     prev_encoder_padding_mask=prev_encoder_padding_mask,
-                                     post_encoder_padding_mask=post_encoder_padding_mask)
-            if return_all_hiddens:
-                assert encoder_states is not None
-                encoder_states.append(curr)
-
-        if self.layer_norm is not None:
-            curr = self.layer_norm(curr)
-
-        return AutoEncoderOut(
-            encoder_out=curr,  # T x B x C
-            encoder_padding_mask=curr_encoder_padding_mask,  # B x T
-            encoder_embedding=curr_encoder_embedding,  # B x T x C
-            encoder_states=encoder_states,  # List[T x B x C]
-            src_tokens=None,
-            src_lengths=None,
-            current_src=curr_src, # B x T x C
-            autodecoder_out=None,
-        )
-
-    @torch.jit.export
-    def reorder_encoder_out(self, encoder_out: AutoEncoderOut, new_order):
-        """
-        Reorder encoder output according to *new_order*.
-
-        Args:
-            encoder_out: output from the ``forward()`` method
-            new_order (LongTensor): desired order
-
-        Returns:
-            *encoder_out* rearranged according to *new_order*
-        """
-        """
-        Since encoder_padding_mask and encoder_embedding are both of type
-        Optional[Tensor] in EncoderOut, they need to be copied as local
-        variables for Torchscript Optional refinement
-        """
-        encoder_padding_mask: Optional[Tensor] = encoder_out.encoder_padding_mask
-        encoder_embedding: Optional[Tensor] = encoder_out.encoder_embedding
-
-        new_encoder_out = (
-            encoder_out.encoder_out
-            if encoder_out.encoder_out is None
-            else encoder_out.encoder_out.index_select(1, new_order)
-        )
-        new_encoder_padding_mask = (
-            encoder_padding_mask
-            if encoder_padding_mask is None
-            else encoder_padding_mask.index_select(0, new_order)
-        )
-        new_encoder_embedding = (
-            encoder_embedding
-            if encoder_embedding is None
-            else encoder_embedding.index_select(0, new_order)
-        )
-
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
-
-        src_tokens = encoder_out.src_tokens
-        if src_tokens is not None:
-            src_tokens = src_tokens.index_select(0, new_order)
-
-        src_lengths = encoder_out.src_lengths
-        if src_lengths is not None:
-            src_lengths = src_lengths.index_select(0, new_order)
-
-        current_src = encoder_out.current_src
-        if current_src is not None:
-            current_src = current_src.index_select(0, new_order)
-
-        autodecoder_out = encoder_out.autodecoder_out
-        if autodecoder_out is not None:
-            autodecoder_out = autodecoder_out.index_select(0, new_order)
-
-        return AutoEncoderOut(
-            encoder_out=new_encoder_out,  # T x B x C
-            encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_embedding=new_encoder_embedding,  # B x T x C
-            encoder_states=encoder_states,  # List[T x B x C]
-            src_tokens=src_tokens,  # B x T
-            src_lengths=src_lengths,  # B x 1
-            current_src=current_src, # B x T x C
-            autodecoder_out=autodecoder_out,
-        )
-
-    def max_positions(self):
-        """Maximum input length supported by the encoder."""
-        if self.embed_positions is None:
-            return self.max_source_positions
-        return min(self.max_source_positions, self.embed_positions.max_positions)
-
-    def upgrade_state_dict_named(self, state_dict, name):
-        """Upgrade a (possibly old) state dict for new versions of fairseq."""
-        if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
-            weights_key = "{}.embed_positions.weights".format(name)
-            if weights_key in state_dict:
-                print("deleting {0}".format(weights_key))
-                del state_dict[weights_key]
-            state_dict[
-                "{}.embed_positions._float_tensor".format(name)
-            ] = torch.FloatTensor(1)
-        for i in range(self.num_layers):
-            # update layer norms
-            self.layers[i].upgrade_state_dict_named(
-                state_dict, "{}.layers.{}".format(name, i)
-            )
-
-        version_key = "{}.version".format(name)
-        if utils.item(state_dict.get(version_key, torch.Tensor([1]))[0]) < 2:
-            # earlier checkpoints did not normalize after the stack of layers
-            self.layer_norm = None
-            self.normalize = False
-            state_dict[version_key] = torch.Tensor([1])
-        return state_dict
 
 class AutoEncoderDecoder(FairseqEncoder):
     def __init__(self, args, dictionary, embed_tokens):
@@ -616,7 +334,7 @@ class AutoEncoderDecoder(FairseqEncoder):
     def build_encoder_layer(self, args):
         return TransformerEncoderLayer(args)
 
-    def forward(self, encoder_out: AutoEncoderOut):
+    def forward(self, encoder_out: EncoderOut):
         input = encoder_out.encoder_out
         padding_mask = encoder_out.encoder_padding_mask
 
@@ -637,7 +355,6 @@ class AutoEncoderDecoder(FairseqEncoder):
             encoder_states=encoder_out.encoder_states,  # List[T x B x C]
             src_tokens=encoder_out.src_tokens,
             src_lengths=encoder_out.src_lengths,
-            current_src=encoder_out.current_src,
             autodecoder_out=input,
         )
 

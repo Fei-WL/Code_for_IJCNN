@@ -183,58 +183,58 @@ def main(args):
             )
         )
 
-    # def make_binary_alignment_dataset(input_prefix, output_prefix, num_workers):
-    #     nseq = [0]
-    #
-    #     def merge_result(worker_result):
-    #         nseq[0] += worker_result["nseq"]
-    #
-    #     input_file = input_prefix
-    #     offsets = Binarizer.find_offsets(input_file, num_workers)
-    #     pool = None
-    #     if num_workers > 1:
-    #         pool = Pool(processes=num_workers - 1)
-    #         for worker_id in range(1, num_workers):
-    #             prefix = "{}{}".format(output_prefix, worker_id)
-    #             pool.apply_async(
-    #                 binarize_alignments,
-    #                 (
-    #                     args,
-    #                     input_file,
-    #                     utils.parse_alignment,
-    #                     prefix,
-    #                     offsets[worker_id],
-    #                     offsets[worker_id + 1],
-    #                 ),
-    #                 callback=merge_result,
-    #             )
-    #         pool.close()
-    #
-    #     ds = indexed_dataset.make_builder(
-    #         dataset_dest_file(args, output_prefix, None, "bin"), impl=args.dataset_impl
-    #     )
-    #
-    #     merge_result(
-    #         Binarizer.binarize_alignments(
-    #             input_file,
-    #             utils.parse_alignment,
-    #             lambda t: ds.add_item(t),
-    #             offset=0,
-    #             end=offsets[1],
-    #         )
-    #     )
-    #     if num_workers > 1:
-    #         pool.join()
-    #         for worker_id in range(1, num_workers):
-    #             prefix = "{}{}".format(output_prefix, worker_id)
-    #             temp_file_path = dataset_dest_prefix(args, prefix, None)
-    #             ds.merge_file_(temp_file_path)
-    #             os.remove(indexed_dataset.data_file_path(temp_file_path))
-    #             os.remove(indexed_dataset.index_file_path(temp_file_path))
-    #
-    #     ds.finalize(dataset_dest_file(args, output_prefix, None, "idx"))
-    #
-    #     logger.info("[alignments] {}: parsed {} alignments".format(input_file, nseq[0]))
+    def make_binary_alignment_dataset(input_prefix, output_prefix, num_workers):
+        nseq = [0]
+
+        def merge_result(worker_result):
+            nseq[0] += worker_result["nseq"]
+
+        input_file = input_prefix
+        offsets = Binarizer.find_offsets(input_file, num_workers)
+        pool = None
+        if num_workers > 1:
+            pool = Pool(processes=num_workers - 1)
+            for worker_id in range(1, num_workers):
+                prefix = "{}{}".format(output_prefix, worker_id)
+                pool.apply_async(
+                    binarize_alignments,
+                    (
+                        args,
+                        input_file,
+                        utils.parse_alignment,
+                        prefix,
+                        offsets[worker_id],
+                        offsets[worker_id + 1],
+                    ),
+                    callback=merge_result,
+                )
+            pool.close()
+
+        ds = indexed_dataset.make_builder(
+            dataset_dest_file(args, output_prefix, None, "bin"), impl=args.dataset_impl
+        )
+
+        merge_result(
+            Binarizer.binarize_alignments(
+                input_file,
+                utils.parse_alignment,
+                lambda t: ds.add_item(t),
+                offset=0,
+                end=offsets[1],
+            )
+        )
+        if num_workers > 1:
+            pool.join()
+            for worker_id in range(1, num_workers):
+                prefix = "{}{}".format(output_prefix, worker_id)
+                temp_file_path = dataset_dest_prefix(args, prefix, None)
+                ds.merge_file_(temp_file_path)
+                os.remove(indexed_dataset.data_file_path(temp_file_path))
+                os.remove(indexed_dataset.index_file_path(temp_file_path))
+
+        ds.finalize(dataset_dest_file(args, output_prefix, None, "idx"))
+
+        logger.info("[alignments] {}: parsed {} alignments".format(input_file, nseq[0]))
 
     def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
         if args.dataset_impl == "raw":
@@ -275,31 +275,32 @@ def main(args):
                     make_dataset(vocab, args.testprevpref, "test_prev", lang, num_workers=args.workers)
                 if args.testpostpref:
                     make_dataset(vocab, args.testpostpref, "test_post", lang, num_workers=args.workers)
-    # def make_all_alignments():
-    #     if args.trainpref and os.path.exists(args.trainpref + "." + args.align_suffix):
-    #         make_binary_alignment_dataset(
-    #             args.trainpref + "." + args.align_suffix,
-    #             "train.align",
-    #             num_workers=args.workers,
-    #         )
-    #     if args.validpref and os.path.exists(args.validpref + "." + args.align_suffix):
-    #         make_binary_alignment_dataset(
-    #             args.validpref + "." + args.align_suffix,
-    #             "valid.align",
-    #             num_workers=args.workers,
-    #         )
-    #     if args.testpref and os.path.exists(args.testpref + "." + args.align_suffix):
-    #         make_binary_alignment_dataset(
-    #             args.testpref + "." + args.align_suffix,
-    #             "test.align",
-    #             num_workers=args.workers,
-    #         )
+
+    def make_all_alignments():
+        if args.trainpref and os.path.exists(args.trainpref + "." + args.align_suffix):
+            make_binary_alignment_dataset(
+                args.trainpref + "." + args.align_suffix,
+                "train.align",
+                num_workers=args.workers,
+            )
+        if args.validpref and os.path.exists(args.validpref + "." + args.align_suffix):
+            make_binary_alignment_dataset(
+                args.validpref + "." + args.align_suffix,
+                "valid.align",
+                num_workers=args.workers,
+            )
+        if args.testpref and os.path.exists(args.testpref + "." + args.align_suffix):
+            make_binary_alignment_dataset(
+                args.testpref + "." + args.align_suffix,
+                "test.align",
+                num_workers=args.workers,
+            )
 
     make_all(args.source_lang, src_dict)
     if target:
         make_all(args.target_lang, tgt_dict)
-    # if args.align_suffix:
-    #     make_all_alignments()
+    if args.align_suffix:
+        make_all_alignments()
 
     logger.info("Wrote preprocessed data to {}".format(args.destdir))
 
