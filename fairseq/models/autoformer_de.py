@@ -427,7 +427,6 @@ class AutoformerDEEncoder(FairseqEncoder):
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,
             src_lengths=None,
-            autodecoder_out=None
         )
 
     @torch.jit.export
