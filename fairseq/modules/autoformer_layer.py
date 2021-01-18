@@ -289,6 +289,8 @@ class AutoformerDecoderLayer(nn.Module):
             self.encoder_attn = self.build_encoder_attention(self.embed_dim, args)
             self.encoder_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
+        self.build_clsr_layer()
+
         self.clsr_attn = self.build_encoder_attention(self.embed_dim, args)
         self.clsr_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
