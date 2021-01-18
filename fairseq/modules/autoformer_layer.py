@@ -153,7 +153,7 @@ class AutoformerEncoderLayer(nn.Module):
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
             g_temp = (G > 0).float()
             g_temp = g_temp[:, :, -1].transpose(0, 1)
-            print("g_temp:{}".format(g_temp))
+            print("g_temp:{}, clsr_ctx_padding_mask:{}".format(g_temp.size(), clsr_ctx_padding_mask.size()))
         else:
             g = (G > 0).float()
             g_temp = g[:, :, -1].transpose(0, 1)
