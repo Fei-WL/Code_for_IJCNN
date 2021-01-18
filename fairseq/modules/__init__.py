@@ -36,7 +36,7 @@ from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .vggblock import VGGBlock
 from .context_layer import ContextDecoderLayer, ContextEncoderLayer
-from .autoformer_layer import AutoformerEncoderLayer
+from .autoformer_layer import AutoformerEncoderLayer, AutoformerDecoderLayer
 from .s_autoformer_layer import SAutoformerEncoderLayer
 from .autoformersingle_layer import AutoformerSingleEncoderLayer
 
@@ -80,6 +80,7 @@ __all__ = [
     "ContextDecoderLayer",
     "ContextEncoderLayer",
     "AutoformerEncoderLayer",
+    "AutoformerDecoderLayer",
     "SAutoformerEncoderLayer",
     "AutoformerSingleEncoderLayer",
 ]
