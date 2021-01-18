@@ -151,6 +151,9 @@ class AutoformerEncoderLayer(nn.Module):
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
+            g_temp = (G > 0).float()
+            g_temp = g_temp[:, :, -1].transpose(0, 1)
+            print("g_temp:{}".format(g_temp))
         else:
             g = (G > 0).float()
             g_temp = g[:, :, -1].transpose(0, 1)
