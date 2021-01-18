@@ -151,22 +151,23 @@ class AutoformerEncoderLayer(nn.Module):
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
-            g_temp = (G > 0).float()
-            g_temp = g_temp[:, :, -1].transpose(0, 1)
-            print("g_temp:{}, clsr_ctx_padding_mask:{}".format(g_temp.size(), clsr_ctx_padding_mask.size()))
+            # g_temp = (G > 0).float()
+            # g_temp = g_temp[:, :, -1].transpose(0, 1)
+            # print("g_temp:{}, clsr_ctx_padding_mask:{}".format(g_temp.size(), clsr_ctx_padding_mask.size()))
         else:
             g = (G > 0).float()
             g_temp = g[:, :, -1].transpose(0, 1)
-            clsr_ctx_padding_mask = []
-            for bsz in range(prev_encoder_padding_mask.size(0)):
-                temp = []
-                for ssz in range(prev_encoder_padding_mask.size(1)):
-                    if g_temp[bsz][ssz] > 0:
-                        temp.append(prev_encoder_padding_mask[bsz][ssz])
-                    else:
-                        temp.append(post_encoder_padding_mask[bsz][ssz])
-                clsr_ctx_padding_mask.append(temp)
-            clsr_ctx_padding_mask = torch.tensor(clsr_ctx_padding_mask).to(prev_encoder_padding_mask.device)
+            clsr_ctx_padding_mask = g_temp * prev_encoder_padding_mask + (1 - g_temp) * post_encoder_padding_mask
+            # clsr_ctx_padding_mask = []
+            # for bsz in range(prev_encoder_padding_mask.size(0)):
+            #     temp = []
+            #     for ssz in range(prev_encoder_padding_mask.size(1)):
+            #         if g_temp[bsz][ssz] > 0:
+            #             temp.append(prev_encoder_padding_mask[bsz][ssz])
+            #         else:
+            #             temp.append(post_encoder_padding_mask[bsz][ssz])
+            #     clsr_ctx_padding_mask.append(temp)
+            # clsr_ctx_padding_mask = torch.tensor(clsr_ctx_padding_mask).to(prev_encoder_padding_mask.device)
 
         h_prev = self.prev_W(prev)
         h_post = self.post_W(post)
