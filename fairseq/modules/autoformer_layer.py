@@ -117,6 +117,8 @@ class AutoformerEncoderLayer(nn.Module):
             vdim=getattr(args, "encoder_embed_dim", None),
             dropout=args.attention_dropout,
             encoder_decoder_attention=True,
+            q_noise=self.quant_noise,
+            qn_block_size=self.quant_noise_block_size,
         )
 
     def residual_connection(self, x, residual):
