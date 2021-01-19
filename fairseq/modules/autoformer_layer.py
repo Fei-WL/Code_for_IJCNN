@@ -155,7 +155,7 @@ class AutoformerEncoderLayer(nn.Module):
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
         else:
             print("curr.type:{}".format(type(curr)))
-            g = torch.HalfTensor((G > 0).float())
+            g = torch.HalfTensor((G > 0))
             g_temp = g[:, :, -1].transpose(0, 1)
             clsr_ctx_padding_mask = g_temp * prev_encoder_padding_mask + (1 - g_temp) * post_encoder_padding_mask
 
