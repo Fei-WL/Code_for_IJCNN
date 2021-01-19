@@ -153,11 +153,11 @@ class AutoformerEncoderLayer(nn.Module):
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
-            tttt = torch.HalfTensor((G > 0).half().cpu()).cuda()
-            tttt = (G > 0).half()
+            # tttt = torch.HalfTensor((G > 0).half().cpu()).cuda()
+            # tttt = (G > 0).half()
         else:
-            print("curr.type:{}".format(type(curr)))
-            g = torch.HalfTensor((G > 0))
+            # print("curr.type:{}".format(type(curr)))
+            g = (G > 0).half()
             g_temp = g[:, :, -1].transpose(0, 1)
             clsr_ctx_padding_mask = g_temp * prev_encoder_padding_mask + (1 - g_temp) * post_encoder_padding_mask
 
