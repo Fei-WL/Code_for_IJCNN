@@ -163,7 +163,8 @@ class AutoformerEncoderLayer(nn.Module):
 
         clsr = g * h_prev + (1 - g) * h_post
 
-        return clsr, clsr_ctx_padding_mask
+        device = curr.device
+        return clsr.to(device), clsr_ctx_padding_mask.to(device)
 
     def forward(self, curr_x, prev_x, post_x,
                 curr_encoder_padding_mask,
