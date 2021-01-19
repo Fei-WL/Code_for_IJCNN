@@ -144,6 +144,7 @@ class AutoformerEncoderLayer(nn.Module):
     def do_clsr_gate(self, curr, prev, post,
                      prev_encoder_padding_mask,
                      post_encoder_padding_mask):
+        torch.set_default_tensor_type(torch.half)
         G_fc1 = self.G_fc1_activation_fn(self.G_fc1(curr))     # output shape:[batch, sent_len, 128]
         G_fc1 = self.G_activation_dropout_module(G_fc1)
         G = self.G_fc2(G_fc1)                               # output shape:[batch, sent_len, 1]
@@ -153,7 +154,8 @@ class AutoformerEncoderLayer(nn.Module):
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
-            tttt = torch.HalfTensor((G > 0).float().cpu()).cuda()
+            tttt = torch.HalfTensor((G > 0).half().cpu()).cuda()
+            tttt = (G > 0).half()
         else:
             print("curr.type:{}".format(type(curr)))
             g = torch.HalfTensor((G > 0))
