@@ -9,7 +9,6 @@ import warnings
 from argparse import Namespace
 
 import torch
-from torch.cuda.amp import autocast as autocast
 from fairseq import metrics, search, tokenizer, utils
 from fairseq.data import Dictionary, FairseqDataset, data_utils, encoders, iterators
 from fairseq.dataclass.utils import gen_parser_from_dataclass
@@ -423,9 +422,9 @@ class FairseqTask(object):
 
     def valid_step(self, sample, model, criterion):
         model.eval()
-        with autocast():
-            with torch.no_grad():
-                loss, sample_size, logging_output = criterion(model, sample)
+
+        with torch.no_grad():
+            loss, sample_size, logging_output = criterion(model, sample)
         return loss, sample_size, logging_output
 
     def inference_step(

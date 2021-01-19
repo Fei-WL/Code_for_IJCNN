@@ -154,7 +154,8 @@ class AutoformerEncoderLayer(nn.Module):
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & post_encoder_padding_mask
         else:
-            g = (G > 0).float()
+            print("curr.type:{}".format(type(curr)))
+            g = torch.HalfTensor((G > 0).float())
             g_temp = g[:, :, -1].transpose(0, 1)
             clsr_ctx_padding_mask = g_temp * prev_encoder_padding_mask + (1 - g_temp) * post_encoder_padding_mask
 
@@ -162,9 +163,9 @@ class AutoformerEncoderLayer(nn.Module):
         h_post = self.post_W(post)
 
         clsr = g * h_prev + (1 - g) * h_post
-
-        device = curr.device
-        return clsr.to(device), clsr_ctx_padding_mask.to(device)
+        if not self.training:
+            print("clsr.type:{}".format(type(curr)))
+        return clsr, clsr_ctx_padding_mask
 
     def forward(self, curr_x, prev_x, post_x,
                 curr_encoder_padding_mask,
