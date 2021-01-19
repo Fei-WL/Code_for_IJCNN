@@ -144,7 +144,6 @@ class AutoformerEncoderLayer(nn.Module):
     def do_clsr_gate(self, curr, prev, post,
                      prev_encoder_padding_mask,
                      post_encoder_padding_mask):
-        torch.set_default_tensor_type(torch.half)
         G_fc1 = self.G_fc1_activation_fn(self.G_fc1(curr))     # output shape:[batch, sent_len, 128]
         G_fc1 = self.G_activation_dropout_module(G_fc1)
         G = self.G_fc2(G_fc1)                               # output shape:[batch, sent_len, 1]
