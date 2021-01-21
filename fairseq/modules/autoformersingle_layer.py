@@ -21,6 +21,7 @@ class AutoformerSingleEncoderLayer(nn.Module):
         self.embed_dim = args.encoder_embed_dim
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8)
+        self.fp16 = args.fp16
         self.self_attn = self.build_self_attention(self.embed_dim, args)
         self.self_attn_layer_norm = LayerNorm(self.embed_dim)
 
@@ -152,7 +153,7 @@ class AutoformerSingleEncoderLayer(nn.Module):
             g = self.g_dropout(g)
             clsr_ctx_padding_mask = prev_encoder_padding_mask & curr_encoder_padding_mask
         else:
-            g = (G > 0).float()
+            g = (G > 0).float() if not self.fp16 else (G > 0).half()
             g_temp = g[:, :, -1].transpose(0, 1)
             clsr_ctx_padding_mask = g_temp * curr_encoder_padding_mask + (1 - g_temp) * prev_encoder_padding_mask
 
