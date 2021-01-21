@@ -33,7 +33,7 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
 @register_model("autoformersingle")
-class AutoformerModel(FairseqEncoderDecoderModel):
+class AutoformerSingleModel(FairseqEncoderDecoderModel):
     @classmethod
     def hub_models(cls):
         # fmt: off
@@ -464,14 +464,6 @@ class AutoformerSingleEncoder(FairseqEncoder):
         src_lengths = encoder_out.src_lengths
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
-
-        current_src = encoder_out.current_src
-        if current_src is not None:
-            current_src = current_src.index_select(0, new_order)
-
-        autodecoder_out = encoder_out.autodecoder_out
-        if autodecoder_out is not None:
-            autodecoder_out = autodecoder_out.index_select(0, new_order)
 
         return EncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
