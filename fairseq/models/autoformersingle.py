@@ -505,14 +505,6 @@ class AutoformerSingleEncoder(FairseqEncoder):
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
 
-def find_index(_data_list, sep_id):
-    sep = sep_id
-    res = [idx for idx, i in enumerate(_data_list) if i == sep]
-    if len(res) == 0:
-        return None
-    else:
-        return res
-
 @register_model_architecture("autoformersingle", "autoformersingle")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
