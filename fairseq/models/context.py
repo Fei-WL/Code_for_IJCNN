@@ -363,8 +363,8 @@ class ContextEncoder(FairseqEncoder):
         )
 
         self.context_encoder = self.build_context_encoder(args, dictionary, embed_tokens)
-        for param in self.context_encoder.parameters():
-            param.requires_grad = False
+        # for param in self.context_encoder.parameters():
+        #     param.requires_grad = False
 
         self.num_layers = len(self.layers)
 
