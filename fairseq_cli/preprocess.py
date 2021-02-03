@@ -46,6 +46,12 @@ def main(args):
     def train_path(lang):
         return "{}{}".format(args.trainpref, ("." + lang) if lang else "")
 
+    def prev_path(lang):
+        return "{}{}".format(args.trainprevpref, ("." + lang) if lang else "")
+
+    def post_path(lang):
+        return "{}{}".format(args.trainpostpref, ("." + lang) if lang else "")
+
     def file_name(prefix, lang):
         fname = prefix
         if lang is not None:
@@ -100,7 +106,13 @@ def main(args):
             assert (
                 args.trainpref
             ), "--trainpref must be set if --srcdict is not specified"
-            src_dict = build_dictionary([train_path(args.source_lang)], src=True)
+            if args.context:
+                file_list = [train_path(args.source_lang), prev_path(args.source_lang)]
+                if args.trainpostpref:
+                    file_list.append(post_path(args.source_lang))
+            else:
+                file_list = [train_path(args.source_lang)]
+            src_dict = build_dictionary(file_list, src=True)
 
         if target:
             if args.tgtdict:
