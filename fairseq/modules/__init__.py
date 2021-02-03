@@ -39,6 +39,7 @@ from .context_layer import ContextDecoderLayer, ContextEncoderLayer
 from .autoformer_layer import AutoformerEncoderLayer, AutoformerDecoderLayer
 from .s_autoformer_layer import SAutoformerEncoderLayer
 from .autoformersingle_layer import AutoformerSingleEncoderLayer
+from .bigautoformer_layer import BigAutoformerEncoderLayer
 
 __all__ = [
     "AdaptiveInput",
@@ -83,4 +84,5 @@ __all__ = [
     "AutoformerDecoderLayer",
     "SAutoformerEncoderLayer",
     "AutoformerSingleEncoderLayer",
+    "BigAutoformerEncoderLayer",
 ]
