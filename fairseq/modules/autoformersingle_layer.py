@@ -196,7 +196,6 @@ class AutoformerSingleEncoderLayer(nn.Module):
         """
         prev_x = self.context_encoder_layer(prev_x, prev_encoder_padding_mask, prev_attn_mask)
         clsr_ctx, clsr_ctx_padding_mask = self.do_clsr_gate(curr_x, prev_x,
-                                                            curr_encoder_padding_mask,
                                                             prev_encoder_padding_mask)
         residual = curr_x
         if self.normalize_before:
