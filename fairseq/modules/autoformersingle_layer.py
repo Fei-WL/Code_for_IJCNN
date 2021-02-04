@@ -105,7 +105,7 @@ class AutoformerSingleEncoderLayer(nn.Module):
                                      self.quant_noise,
                                      self.quant_noise_block_size,
                                      bias=False)
-        self.curr_W = self.build_fc2(self.embed_dim, self.embed_dim,
+        self.post_W = self.build_fc2(self.embed_dim, self.embed_dim,
                                      self.quant_noise,
                                      self.quant_noise_block_size,
                                      bias=False)
@@ -141,7 +141,6 @@ class AutoformerSingleEncoderLayer(nn.Module):
         self.context_encoder_layer.upgrade_state_dict_named(state_dict, name)
 
     def do_clsr_gate(self, curr, prev,
-                     curr_encoder_padding_mask,
                      prev_encoder_padding_mask):
         G_fc1 = self.G_fc1_activation_fn(self.G_fc1(curr))     # output shape:[batch, sent_len, 128]
         G_fc1 = self.G_activation_dropout_module(G_fc1)
@@ -151,16 +150,16 @@ class AutoformerSingleEncoderLayer(nn.Module):
         if self.training:
             g = self.g_activation_fn(G)
             g = self.g_dropout(g)
-            clsr_ctx_padding_mask = prev_encoder_padding_mask & curr_encoder_padding_mask
+            clsr_ctx_padding_mask = prev_encoder_padding_mask
         else:
             g = (G > 0).float() if not self.fp16 else (G > 0).half()
             g_temp = g[:, :, -1].transpose(0, 1)
-            clsr_ctx_padding_mask = g_temp * curr_encoder_padding_mask + (1 - g_temp) * prev_encoder_padding_mask
+            clsr_ctx_padding_mask = g_temp * prev_encoder_padding_mask + (1 - g_temp) * prev_encoder_padding_mask
 
-        h_curr = self.curr_W(curr)
+        h_post = self.post_W(prev)
         h_prev = self.prev_W(prev)
 
-        clsr = g * h_curr + (1 - g) * h_prev
+        clsr = g * h_post + (1 - g) * h_prev
 
         return clsr, clsr_ctx_padding_mask
 
